@@ -1,0 +1,213 @@
+// ProjectBridge data model (proposal Section 11.3).
+// Hosted on Supabase Postgres in the `public` schema. Row Level Security is enabled with no
+// policies (migration enable_rls), so Supabase's Data API cannot read these tables; only the
+// Express server, connecting as the table owner, can.
+// Enumerated values are stored as strings and validated in src/domain.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  /// Null for accounts that only sign in with Google.
+  passwordHash String?
+  googleId     String?  @unique
+  /// UPLOADER | PROFESSIONAL | ADMIN. New accounts are always UPLOADER (FR01).
+  role         String   @default("UPLOADER")
+  /// ACTIVE | RESTRICTED | SUSPENDED | BANNED (FR16).
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions    Session[]
+  emailTokens EmailToken[]
+  projects    Project[]
+  memberships ProjectMember[]
+}
+
+/// Server-side sessions so suspension/ban invalidates access on the next request (NFR-S3).
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// Single-use password-reset tokens; only the hash is stored.
+model EmailToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// RESET
+  type      String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, type])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  targetType String?
+  targetId   String?
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@index([action, createdAt])
+}
+
+model Project {
+  id                  String    @id @default(cuid())
+  ownerId             String
+  owner               User      @relation(fields: [ownerId], references: [id])
+  title               String
+  /// Short public pitch shown on cards.
+  summary             String    @default("")
+  problem             String    @default("")
+  /// The solution/overview. Professionals see it in full; Uploaders see 500 characters (Section 4.2).
+  overview            String    @default("")
+  /// Lowercase tags; FR06 search requires every selected tag.
+  tags                String[]  @default([])
+  /// IDEA | PROTOTYPE | MVP | PILOT | LAUNCHED
+  stage               String    @default("IDEA")
+  /// HTTPS demonstration link (FR02).
+  demoUrl             String?
+  /// Owner shows the demo link and screenshots to other Uploaders (Section 4.2).
+  publicDemo          Boolean   @default(false)
+  thumbnailUrl        String?
+  /// DRAFT | SUBMITTED | CHANGES_REQUESTED | PUBLISHED | HIDDEN | REMOVED | DELETED
+  status              String    @default("DRAFT")
+  /// Admin note when changes are requested.
+  reviewNote          String?
+  ownershipDeclaredAt DateTime?
+  submittedAt         DateTime?
+  publishedAt         DateTime?
+  hiddenAt            DateTime?
+  deletedAt           DateTime?
+  /// Seeded demo data is labelled separately from genuine pilot projects.
+  isSynthetic         Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  revisions  ProjectRevision[]
+  members    ProjectMember[]
+  progress   ProgressEntry[]
+  milestones Milestone[]
+  media      ProjectMedia[]
+
+  @@index([status, createdAt])
+  @@index([status, publishedAt])
+  @@index([ownerId])
+  @@index([tags], type: Gin)
+}
+
+/// A change to a published project's overview/demo awaiting Admin review (FR03).
+/// The live Project row keeps the previously approved content until approval.
+model ProjectRevision {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  authorId   String
+  /// Proposed snapshot of every content field; replaces the live content on approval.
+  title      String
+  summary    String
+  problem    String
+  overview   String
+  tags       String[]
+  demoUrl    String?
+  /// PENDING | APPROVED | REJECTED
+  status     String   @default("PENDING")
+  reviewNote String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([projectId, status])
+  @@index([status, createdAt])
+}
+
+/// Team membership (FR03). Only ACCEPTED members are credited or may edit.
+model ProjectMember {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// EDITOR
+  role        String   @default("EDITOR")
+  /// INVITED | ACCEPTED | DECLINED
+  status      String   @default("INVITED")
+  invitedById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([projectId, userId])
+  @@index([userId, status])
+}
+
+model ProgressEntry {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+model Milestone {
+  id        String    @id @default(cuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title     String
+  /// PLANNED | IN_PROGRESS | DONE
+  status    String    @default("PLANNED")
+  dueDate   DateTime?
+  position  Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([projectId, position])
+}
+
+/// Screenshot in the private Supabase Storage bucket, served through short-lived signed URLs.
+model ProjectMedia {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  storagePath String
+  mimeType    String
+  sizeBytes   Int
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([projectId, position])
+}
+
+/// Anonymous browsing session used to enforce the Guest card cap (FR05).
+model GuestSession {
+  id             String   @id @default(cuid())
+  tokenHash      String   @unique
+  cardsServed    Int      @default(0)
+  /// Distinct projects this guest has been shown; detail views draw on the same 20-card budget.
+  seenProjectIds String[] @default([])
+  createdAt      DateTime @default(now())
+  lastSeenAt     DateTime @updatedAt
+}

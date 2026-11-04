@@ -1,0 +1,28 @@
+import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
+import { config } from '../config.js';
+
+const message = (msg: string) => ({ error: { code: 'RATE_LIMITED', message: msg } });
+const WINDOW_MS = 15 * 60 * 1000;
+
+/** NFR-S1: failed sign-ins are limited per address and email; successful ones are not counted. */
+export const loginLimiter = rateLimit({
+  windowMs: WINDOW_MS,
+  limit: config.loginMaxAttempts,
+  skipSuccessfulRequests: true,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    return `${ipKeyGenerator(req.ip ?? '')}|${email}`;
+  },
+  message: message('Too many failed sign-in attempts. Please wait 15 minutes and try again.'),
+});
+
+/** Registration, resend and password-reset requests, which trigger emails. */
+export const authEmailLimiter = rateLimit({
+  windowMs: WINDOW_MS,
+  limit: config.authRateLimit,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: message('Too many requests. Please wait a few minutes and try again.'),
+});

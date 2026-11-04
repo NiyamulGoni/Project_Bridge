@@ -1,0 +1,20 @@
+{
+  "name": "projectbridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ProjectBridge: connecting university projects with industry support (CSE 3102, CSEDU).",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "setup": "npm install && npm run db:migrate -w server && npm run seed -w server",
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
+    "test": "npm test -w server",
+    "seed": "npm run seed -w server",
+    "build": "npm run build -w client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  }
+}
