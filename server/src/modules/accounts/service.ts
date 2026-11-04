@@ -27,6 +27,11 @@ function assertNotBlocked(user: User): void {
   }
 }
 
+async function refuseIfBlocked(user: User): Promise<void> {
+  if (BLOCKED_STATUSES.includes(user.status)) await audit('LOGIN_BLOCKED', user.id, user.id, user.status);
+  assertNotBlocked(user);
+}
+
 /** Starts a server-side session; the returned secret goes into the session cookie. */
 async function createSession(user: User): Promise<{ token: string; user: AuthUser }> {
   const token = randomToken();
@@ -69,10 +74,24 @@ export async function login(email: string, password: string) {
     await audit('LOGIN_FAILED', user?.id ?? null, null, user ? 'wrong password' : 'unknown email');
     throw new HttpError(401, 'INVALID_CREDENTIALS', 'Incorrect email or password.');
   }
-  if (BLOCKED_STATUSES.includes(user.status)) await audit('LOGIN_BLOCKED', user.id, user.id, user.status);
-  assertNotBlocked(user);
+  await refuseIfBlocked(user);
   await audit('LOGIN_SUCCEEDED', user.id);
   return createSession(user);
+}
+
+/**
+ * Links Google to an account found by email. Registration does not verify the address, so whoever
+ * registered it may not be its owner: their password, sessions and unused reset links all go. The
+ * Google user can get a password back through forgot-password, which mails that address. Known gap:
+ * a password login already in flight when this commits can still finish, as login() does not re-check.
+ */
+async function linkGoogle(userId: string, googleId: string): Promise<User> {
+  const [user] = await prisma.$transaction([
+    prisma.user.update({ where: { id: userId }, data: { googleId, passwordHash: null } }),
+    prisma.session.deleteMany({ where: { userId } }),
+    prisma.emailToken.deleteMany({ where: { userId, type: 'RESET', usedAt: null } }),
+  ]);
+  return user;
 }
 
 /**
@@ -97,7 +116,9 @@ export async function loginWithGoogle(credential: string) {
   if (!user) {
     const byEmail = await prisma.user.findUnique({ where: { email: identity.email } });
     if (byEmail) {
-      user = await prisma.user.update({ where: { id: byEmail.id }, data: { googleId: identity.sub } });
+      // Before any write, so a blocked account stays exactly as it was.
+      await refuseIfBlocked(byEmail);
+      user = await linkGoogle(byEmail.id, identity.sub);
       action = 'GOOGLE_LINKED';
     } else {
       user = await prisma.user.create({
@@ -106,8 +127,7 @@ export async function loginWithGoogle(credential: string) {
       action = 'USER_REGISTERED_GOOGLE';
     }
   }
-  if (BLOCKED_STATUSES.includes(user.status)) await audit('LOGIN_BLOCKED', user.id, user.id, user.status);
-  assertNotBlocked(user);
+  await refuseIfBlocked(user);
   await audit(action, user.id);
   return createSession(user);
 }

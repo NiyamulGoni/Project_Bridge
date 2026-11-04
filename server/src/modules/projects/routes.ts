@@ -21,7 +21,8 @@ import * as projects from './service.js';
 /**
  * FR02–FR04: the owner/editor side of projects. Mounted on /api/projects before the public
  * discovery routes, so every route here names its own gate, first in the chain. Reads, and the
- * routes that let a RESTRICTED owner reduce their exposure, stay on plain requireAuth.
+ * routes that let a RESTRICTED owner reduce their exposure, stay on plain requireAuth. Leaving a
+ * team is the same idea for a RESTRICTED editor, see requireSelfOrEdit.
  */
 export const projectsRouter = Router();
 
@@ -154,7 +155,18 @@ projectsRouter.post('/:id/members', requirePermission('edit'), validateBody(invi
   res.status(201).json({ ok: true });
 });
 
-projectsRouter.delete('/:id/members/:userId', requirePermission('edit'), async (req, res) => {
+const requireEdit = requirePermission('edit');
+
+/** Removing yourself (leaving a team) only needs a session, even when RESTRICTED. Removing anyone else is an edit. */
+const requireSelfOrEdit: RequestHandler = (req, res, next) => {
+  if (req.user && req.user.id === param(req, 'userId')) {
+    next();
+    return;
+  }
+  requireEdit(req, res, next);
+};
+
+projectsRouter.delete('/:id/members/:userId', requireSelfOrEdit, async (req, res) => {
   await projects.removeMember(req.user!, param(req, 'id'), param(req, 'userId'));
   res.status(204).end();
 });

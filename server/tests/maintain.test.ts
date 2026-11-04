@@ -106,6 +106,19 @@ describe('Team membership', () => {
     expect((await proAgent.post(`/api/projects/${project.id}/members`).send({ email: third.email })).status).toBe(404);
   });
 
+  it('answers an invite to an Admin exactly as it does an unknown email', async () => {
+    const { project, ownerAgent } = await publishedSetup();
+    const admin = await createUser({ role: 'ADMIN' });
+
+    const toAdmin = await ownerAgent.post(`/api/projects/${project.id}/members`).send({ email: admin.email });
+    const toNobody = await ownerAgent.post(`/api/projects/${project.id}/members`).send({ email: 'nobody@example.com' });
+
+    expect(toAdmin.status).toBe(404);
+    expect(toAdmin.body.error.code).toBe('USER_NOT_FOUND');
+    expect(toAdmin.body).toEqual(toNobody.body);
+    expect(await prisma.projectMember.count({ where: { projectId: project.id } })).toBe(0);
+  });
+
   it('keeps editor rights after the editor’s role changes', async () => {
     const { project, ownerAgent, pro, proAgent } = await publishedSetup();
     await ownerAgent.post(`/api/projects/${project.id}/members`).send({ email: pro.email });

@@ -135,17 +135,38 @@ describe('AT01.3 Sign in with Google', () => {
     const res = await request(app).post('/api/auth/google').send({ credential: 'google:link'.padEnd(30, 'x') });
 
     expect(res.status).toBe(200);
-    expect(res.body.user).toMatchObject({ id: existing.id, role: 'PROFESSIONAL', hasPassword: true, googleLinked: true });
+    expect(res.body.user).toMatchObject({ id: existing.id, role: 'PROFESSIONAL', hasPassword: false, googleLinked: true });
     expect(await prisma.user.count()).toBe(1);
   });
 
-  it('refuses a banned account even through Google', async () => {
-    await createUser({ email: identity.email, status: 'BANNED' });
-    googleAccounts.set('banned', identity);
-    const res = await request(app).post('/api/auth/google').send({ credential: 'google:banned'.padEnd(30, 'x') });
+  it('keeps the role and a RESTRICTED status when linking', async () => {
+    const existing = await createUser({ email: identity.email, role: 'PROFESSIONAL', status: 'RESTRICTED' });
+    googleAccounts.set('link', identity);
+    const res = await request(app).post('/api/auth/google').send({ credential: 'google:link'.padEnd(30, 'x') });
+
+    expect(res.status).toBe(200);
+    expect(res.body.user).toMatchObject({ id: existing.id, role: 'PROFESSIONAL', status: 'RESTRICTED', hasPassword: false });
+  });
+
+  it.each(['BANNED', 'SUSPENDED'])('refuses a %s account even through Google, and writes nothing to it', async (status) => {
+    const user = await createUser({ email: identity.email });
+    await signedInAgent(user.email);
+    await request(app).post('/api/auth/forgot-password').send({ email: user.email });
+    const before = await prisma.user.update({ where: { id: user.id }, data: { status } });
+
+    googleAccounts.set('blocked', identity);
+    const res = await request(app).post('/api/auth/google').send({ credential: 'google:blocked'.padEnd(30, 'x') });
 
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('ACCOUNT_DISABLED');
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(after.googleId).toBeNull();
+    expect(after.passwordHash).toBe(user.passwordHash);
+    expect(after).toEqual(before);
+    expect(await prisma.session.count({ where: { userId: user.id } })).toBe(1);
+    expect(await prisma.emailToken.count({ where: { userId: user.id } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { action: 'LOGIN_BLOCKED', targetId: user.id } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { action: 'GOOGLE_LINKED' } })).toBe(0);
   });
 
   it('refuses a Google account whose email is not verified', async () => {
@@ -167,6 +188,116 @@ describe('AT01.3 Sign in with Google', () => {
     const res = await request(app).post('/api/auth/login').send({ email: identity.email, password: 'anything123' });
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe('INVALID_CREDENTIALS');
+  });
+});
+
+describe('AT01.3 Google linking shuts out whoever registered the address first', () => {
+  const owner = { sub: 'google-owner', email: 'victim@gmail.com', emailVerified: true, name: 'Real Owner' };
+  const ATTACKER_PASSWORD = 'AttackerPass1';
+
+  async function registerAsAttacker() {
+    const attacker = request.agent(app);
+    const res = await attacker.post('/api/auth/register').send({ name: 'Attacker', email: owner.email, password: ATTACKER_PASSWORD });
+    expect(res.status).toBe(201);
+    expect((await attacker.get('/api/auth/me')).status).toBe(200);
+    return { attacker, id: res.body.user.id as string };
+  }
+
+  async function signInWithGoogle() {
+    googleAccounts.set('owner', owner);
+    const agent = request.agent(app);
+    const res = await agent.post('/api/auth/google').send({ credential: 'google:owner'.padEnd(30, 'x') });
+    expect(res.status).toBe(200);
+    return { agent, res };
+  }
+
+  it('ends the attacker’s session and password, and only the owner gets in', async () => {
+    const { attacker, id } = await registerAsAttacker();
+    const { agent, res } = await signInWithGoogle();
+
+    expect(res.body.user).toMatchObject({ id, role: 'UPLOADER', status: 'ACTIVE', hasPassword: false, googleLinked: true });
+    expect((await attacker.get('/api/auth/me')).status).toBe(401);
+
+    const login = await request(app).post('/api/auth/login').send({ email: owner.email, password: ATTACKER_PASSWORD });
+    const unknown = await request(app).post('/api/auth/login').send({ email: 'ghost@example.com', password: ATTACKER_PASSWORD });
+    expect(login.status).toBe(401);
+    expect(login.body.error).toEqual(unknown.body.error);
+
+    const me = await agent.get('/api/auth/me');
+    expect(me.status).toBe(200);
+    expect(me.body.user.id).toBe(id);
+    expect(await prisma.session.count({ where: { userId: id } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { action: 'GOOGLE_LINKED', targetId: id } })).toBe(1);
+  });
+
+  it('ends every session on that account, and leaves other accounts alone', async () => {
+    const { attacker, id } = await registerAsAttacker();
+    const secondDevice = await signedInAgent(owner.email, ATTACKER_PASSWORD);
+    const bystander = await createUser();
+    const bystanderSession = await signedInAgent(bystander.email);
+    await request(app).post('/api/auth/forgot-password').send({ email: bystander.email });
+    const bystanderToken = tokenFromLastResetMail();
+
+    await signInWithGoogle();
+
+    expect((await attacker.get('/api/auth/me')).status).toBe(401);
+    expect((await secondDevice.get('/api/auth/me')).status).toBe(401);
+    expect(await prisma.session.count({ where: { userId: id } })).toBe(1);
+
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: bystander.id } })).toEqual(bystander);
+    expect((await bystanderSession.get('/api/auth/me')).status).toBe(200);
+    expect((await request(app).post('/api/auth/reset-password').send({ token: bystanderToken, password: 'BystanderPass7' })).status).toBe(200);
+  });
+
+  it('cancels an unused reset link from before the linking', async () => {
+    const { id } = await registerAsAttacker();
+    await request(app).post('/api/auth/forgot-password').send({ email: owner.email });
+    const token = tokenFromLastResetMail();
+    const used = await prisma.emailToken.create({
+      data: { userId: id, type: 'RESET', tokenHash: 'an-already-used-token', expiresAt: new Date(Date.now() + 60000), usedAt: new Date() },
+    });
+
+    const { agent } = await signInWithGoogle();
+
+    const reset = await request(app).post('/api/auth/reset-password').send({ token, password: ATTACKER_PASSWORD });
+    expect(reset.status).toBe(400);
+    expect(reset.body.error.code).toBe('INVALID_TOKEN');
+    expect((await prisma.user.findUniqueOrThrow({ where: { id } })).passwordHash).toBeNull();
+    expect((await agent.get('/api/auth/me')).status).toBe(200);
+    expect((await prisma.emailToken.findMany({ where: { userId: id } })).map((t) => t.id)).toEqual([used.id]);
+  });
+
+  it('lets the owner set a password through forgot-password, then sign in with it', async () => {
+    await registerAsAttacker();
+    await signInWithGoogle();
+
+    expect((await request(app).post('/api/auth/forgot-password').send({ email: owner.email })).status).toBe(200);
+    const reset = await request(app).post('/api/auth/reset-password').send({ token: tokenFromLastResetMail(), password: 'OwnerNewPass7' });
+    expect(reset.status).toBe(200);
+
+    const login = await request(app).post('/api/auth/login').send({ email: owner.email, password: 'OwnerNewPass7' });
+    expect(login.status).toBe(200);
+    expect(login.body.user).toMatchObject({ hasPassword: true, googleLinked: true });
+    expect((await request(app).post('/api/auth/login').send({ email: owner.email, password: ATTACKER_PASSWORD })).status).toBe(401);
+  });
+
+  it('clears nothing on a later Google sign-in', async () => {
+    const { id } = await registerAsAttacker();
+    await signInWithGoogle();
+    await request(app).post('/api/auth/forgot-password').send({ email: owner.email });
+    await request(app).post('/api/auth/reset-password').send({ token: tokenFromLastResetMail(), password: 'OwnerNewPass7' });
+    const passwordSession = await signedInAgent(owner.email, 'OwnerNewPass7');
+    await request(app).post('/api/auth/forgot-password').send({ email: owner.email });
+    const before = await prisma.user.findUniqueOrThrow({ where: { id } });
+
+    const { res } = await signInWithGoogle();
+
+    expect(res.body.user).toMatchObject({ id, hasPassword: true, googleLinked: true });
+    expect(await prisma.user.findUniqueOrThrow({ where: { id } })).toEqual(before);
+    expect((await passwordSession.get('/api/auth/me')).status).toBe(200);
+    expect(await prisma.emailToken.count({ where: { userId: id, usedAt: null } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { action: 'GOOGLE_LINKED', targetId: id } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { action: 'LOGIN_GOOGLE', targetId: id } })).toBe(1);
   });
 });
 

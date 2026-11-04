@@ -63,7 +63,9 @@ Until these are set, everything works except uploads, which return "Screenshot u
    - `client/.env`: `VITE_GOOGLE_CLIENT_ID=` with the same value
 5. Restart `npm run dev`. The Google button appears on the Sign in and Register pages, and stays hidden while the ID is empty.
 
-New Google users become **Uploaders**. If a Google email matches an existing account, Google is linked to that account; its role is unchanged.
+New Google users become **Uploaders**. If a Google email matches an existing account, Google is linked to that account and its role is unchanged, but linking removes any existing password, signs out all existing sessions and cancels unused password-reset links. This is because registration does not verify email addresses, so someone else may have registered that address first, and they should not keep a way in once the Google user arrives. The Google user can set a new password through forgot-password. Suspended and banned accounts are refused before anything is linked.
+
+Known gaps in linking: a password sign-in already in progress at that moment can still finish and keep its session for up to 7 days, and team members added to the account's projects before linking stay on them.
 
 ### Password-reset email (Gmail)
 In `server/.env` set `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, `SMTP_SECURE=true`, `SMTP_USER=<gmail address>` and `SMTP_PASS=<App Password>`. Create the App Password under Google Account → Security → 2-Step Verification → App passwords; it is not your normal password.
@@ -90,7 +92,7 @@ server/
   src/lib/google.ts           Google ID-token verification
   src/lib/storage.ts          screenshot storage (Supabase Storage, or in-memory for tests)
   src/lib/audit.ts            shared audit-log writer
-  src/middleware/             session (NFR-S3), requireAuth/requireRole (I1), rate limits (NFR-S1), validation
+  src/middleware/             session (NFR-S3), requireAuth/requireRole/requirePermission (I1, table in server/src/lib/permissions.ts), rate limits (NFR-S1), validation
   src/modules/accounts/       FR01 register / login / Google / logout / forgot / reset
   src/modules/projects/       FR02–FR04 drafts, submit, revisions, screenshots, team, progress, milestones, hide, delete
   src/modules/discovery/      FR05 feed, FR06 search, FR07 project view; visibility.ts holds the Section 4.2 field table
@@ -101,27 +103,28 @@ client/src/
   components/                 ProjectCard, ProjectView, SearchBar, ReviewQueue, FormField, FormControls, ConfirmDeleteDialog, …
 ```
 
-New features go in a new `server/src/modules/<name>/` folder with `routes.ts` and `service.ts`. Mount the routes in `src/app.ts` and protect them with `requireAuth` / `requireRole`.
+New features go in a new `server/src/modules/<name>/` folder with `routes.ts` and `service.ts`. Mount the routes in `src/app.ts` and protect them with `requireAuth`, `requireRole` or `requirePermission`. `requirePermission` takes an action from the table in `server/src/lib/permissions.ts`, which says which roles may do it and whether a Restricted account may.
 
 ## Security notes (F01)
 - Passwords are hashed with bcrypt (12 rounds). Session and reset tokens are random 256-bit values, and only their SHA-256 hashes are stored.
 - Google ID tokens are verified on the server: signature, expiry, and that they were issued for our client ID. Google accounts with unverified emails are refused.
 - Sessions are stored on the server in an httpOnly, SameSite=Lax cookie. The account's status is re-checked on every request, so a ban or suspension signs the user out immediately, including Google sign-ins.
 - Registration always creates an **Uploader**; a `role` field in the request is ignored. Professional and Admin roles can only be assigned by an Admin (FR15, later).
-- Failed sign-ins are rate-limited: 5 per 15 minutes per IP and email. Forgot-password never reveals whether an email is registered.
+- Failed sign-ins are rate-limited: 5 per 15 minutes per IP and email (per IP alone for Google sign-in, whose requests carry no email). Forgot-password never reveals whether an email is registered.
 - Restricted feed fields are left out of the API response, not just hidden in the browser.
 
 **Scope change to record:** proposal FR01 lists "verify email". Email verification was removed at the team's request, and Google sign-in was added. Record this as a teacher-approved scope change (proposal §7.4).
 
 ## AT01 acceptance evidence
 
-Run `npm test`. The verbose reporter prints one line per check (31 tests):
+Run `npm test`. The verbose reporter prints one line per check:
 
 | AT01 check | Test group |
 |---|---|
 | Register; new accounts start as Uploader and are signed in; no self-assigned role | AT01.1 Registration |
 | Sign in / sign out, generic failure message, rate limit | AT01.2 Sign in / sign out |
 | Google sign-in: new user, account linking, banned, unverified, forged token | AT01.3 Sign in with Google |
+| Linking ends the first registrant's sessions, password and unused reset links; the Google user can set a password; a later Google sign-in clears nothing | AT01.3 Google linking shuts out whoever registered the address first |
 | Password reset revokes old sessions; link can't be reused | AT01.4 Password reset |
 | Disabled-account feedback; ban invalidates live sessions | AT01.5 Disabled accounts |
 | Deny unauthorized privilege (401 / 403 / 200) | AT01.6 Permission checks |

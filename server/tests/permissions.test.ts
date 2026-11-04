@@ -16,8 +16,8 @@ import { app, coverStorage, createProject, createUser, PASSWORD, PNG_BYTES, pris
 
 type Agent = ReturnType<typeof request.agent>;
 type Method = 'get' | 'post' | 'patch' | 'delete';
-/** auth: plain requireAuth. adminRole: only the router-wide requireRole('ADMIN'). */
-type Gate = 'auth' | 'adminRole' | PermissionAction;
+/** auth: plain requireAuth. adminRole: only the router-wide requireRole('ADMIN'). selfOrEdit: requireSelfOrEdit. */
+type Gate = 'auth' | 'adminRole' | 'selfOrEdit' | PermissionAction;
 
 interface Call {
   method: Method;
@@ -51,7 +51,7 @@ const PROJECT_ROUTES: ListedRoute[] = [
   { method: 'patch', path: '/:id/milestones/:milestoneId', gate: 'edit', body: { status: 'DONE' } },
   { method: 'delete', path: '/:id/milestones/:milestoneId', gate: 'edit' },
   { method: 'post', path: '/:id/members', gate: 'edit', body: { email: 'someone@example.com' } },
-  { method: 'delete', path: '/:id/members/:userId', gate: 'edit' },
+  { method: 'delete', path: '/:id/members/:userId', gate: 'selfOrEdit' },
   { method: 'post', path: '/:id/hide', gate: 'auth' },
   { method: 'post', path: '/:id/unhide', gate: 'edit' },
   { method: 'delete', path: '/:id', gate: 'auth', body: { confirmTitle: 'A title' } },
@@ -141,11 +141,14 @@ interface FakeUser {
   status: string;
 }
 
-/** Runs one middleware against a fake request and reports what it decided. */
+/**
+ * Runs one middleware against a fake request and reports what it decided. A fake user has no id,
+ * so to requireSelfOrEdit it is always removing someone else; leaving is proved over HTTP below.
+ */
 function outcome(handle: Handler, user: FakeUser | undefined): string {
   let passed = false;
   try {
-    handle({ user }, {}, () => {
+    handle({ user, params: { userId: 'someone-else' } }, {}, () => {
       passed = true;
     });
   } catch (err) {
@@ -157,6 +160,7 @@ function outcome(handle: Handler, user: FakeUser | undefined): string {
 
 /** What a gate must do for this account, in the order the middleware checks it. */
 function expectedOutcome(gate: Gate, user: FakeUser | undefined): string {
+  if (gate === 'selfOrEdit') return expectedOutcome('edit', user);
   if (!user) return '401 UNAUTHENTICATED';
   if (gate === 'auth') return 'pass';
   if (gate === 'adminRole') return user.role === 'ADMIN' ? 'pass' : '403 FORBIDDEN';
@@ -217,7 +221,10 @@ function firstHandler(router: Router, listed: ListedRoute): Handler {
   return layer!.route!.stack[0].handle;
 }
 
-const gateName = (gate: Gate) => (gate === 'auth' ? 'requireAuth' : `requirePermission(${gate})`);
+function gateName(gate: Gate): string {
+  if (gate === 'auth') return 'requireAuth';
+  return gate === 'selfOrEdit' ? 'requireSelfOrEdit' : `requirePermission(${gate})`;
+}
 
 describe('Route inventory', () => {
   const listed = (routes: ListedRoute[]) => routes.map((r) => routeKey(r.method, r.path)).sort();
@@ -265,7 +272,7 @@ describe('Route inventory', () => {
 
 // ---------------------------------------------------------------- Gated project routes
 
-const GATED_ROUTES = PROJECT_ROUTES.filter((r) => r.gate === 'publish' || r.gate === 'edit');
+const GATED_ROUTES = PROJECT_ROUTES.filter((r) => r.gate === 'publish' || r.gate === 'edit' || r.gate === 'selfOrEdit');
 const ID_ROUTES = GATED_ROUTES.filter((r) => r.path !== '/');
 
 describe('Gated project routes', () => {
@@ -293,7 +300,7 @@ describe('Gated project routes', () => {
     expectNotFound(await send(agents.professional, route, projectUrl(route)), projectNotFound(route));
   });
 
-  it.each(ID_ROUTES.filter((r) => r.gate === 'edit'))('$method $path: active Admin passes the gate and gets 404', async (route) => {
+  it.each(ID_ROUTES.filter((r) => r.gate !== 'publish'))('$method $path: active Admin passes the gate and gets 404', async (route) => {
     expectNotFound(await send(agents.admin, route, projectUrl(route)), projectNotFound(route));
   });
 
@@ -492,6 +499,93 @@ describe('A RESTRICTED owner on their own project', () => {
 
     const invites = await agent.get('/api/projects/invites');
     expect(invites.body.items.map((i: { projectId: string }) => i.projectId)).toContain(project.id);
+  });
+});
+
+// ---------------------------------------------------------------- Leaving a team
+
+describe('Removing a team member', () => {
+  async function team(statuses: { owner?: string; editor?: string } = {}) {
+    const owner = await createUser({ status: statuses.owner });
+    const editor = await createUser({ status: statuses.editor });
+    const colleague = await createUser();
+    const project = await createProject(owner.id);
+    for (const user of [editor, colleague]) {
+      await prisma.projectMember.create({ data: { projectId: project.id, userId: user.id, status: 'ACCEPTED', invitedById: owner.id } });
+    }
+    return { owner, editor, colleague, project };
+  }
+
+  const isMember = async (projectId: string, userId: string) => (await prisma.projectMember.count({ where: { projectId, userId } })) === 1;
+
+  it('a RESTRICTED editor can leave', async () => {
+    const { editor, colleague, project } = await team({ editor: 'RESTRICTED' });
+    const agent = await signedInAgent(editor.email);
+
+    expect((await agent.delete(`/api/projects/${project.id}/members/${editor.id}`)).status).toBe(204);
+
+    expect(await isMember(project.id, editor.id)).toBe(false);
+    expect(await isMember(project.id, colleague.id)).toBe(true);
+    const entry = await prisma.auditLog.findFirstOrThrow({ where: { action: 'MEMBER_REMOVED', targetId: project.id } });
+    expect(entry).toMatchObject({ actorId: editor.id, reason: editor.id });
+  });
+
+  it('a RESTRICTED owner naming themselves gets 404, and the team stays', async () => {
+    const { owner, project } = await team({ owner: 'RESTRICTED' });
+    const agent = await signedInAgent(owner.email);
+
+    expectNotFound(await agent.delete(`/api/projects/${project.id}/members/${owner.id}`), 'Team member not found.');
+    expect(await prisma.projectMember.count({ where: { projectId: project.id } })).toBe(2);
+  });
+
+  it('a RESTRICTED invitee naming themselves gets 404, and the invite stays', async () => {
+    const { owner, project } = await team();
+    const invitee = await createUser({ status: 'RESTRICTED' });
+    const member = await prisma.projectMember.create({ data: { projectId: project.id, userId: invitee.id, invitedById: owner.id } });
+    const agent = await signedInAgent(invitee.email);
+
+    expectNotFound(await agent.delete(`/api/projects/${project.id}/members/${invitee.id}`), 'Project not found.');
+    expect((await prisma.projectMember.findUniqueOrThrow({ where: { id: member.id } })).status).toBe('INVITED');
+  });
+
+  it('a RESTRICTED owner cannot remove another member', async () => {
+    const { owner, editor, project } = await team({ owner: 'RESTRICTED' });
+    const agent = await signedInAgent(owner.email);
+
+    expectRestricted(await agent.delete(`/api/projects/${project.id}/members/${editor.id}`));
+    expect(await isMember(project.id, editor.id)).toBe(true);
+  });
+
+  it('a RESTRICTED editor cannot remove someone else', async () => {
+    const { editor, colleague, project } = await team({ editor: 'RESTRICTED' });
+    const agent = await signedInAgent(editor.email);
+
+    expectRestricted(await agent.delete(`/api/projects/${project.id}/members/${colleague.id}`));
+    expect(await isMember(project.id, colleague.id)).toBe(true);
+  });
+
+  it('a Guest gets 401, whoever they name', async () => {
+    const { editor, project } = await team();
+
+    expectError(await guest.delete(`/api/projects/${project.id}/members/${editor.id}`), 401, 'UNAUTHENTICATED');
+    expect(await isMember(project.id, editor.id)).toBe(true);
+  });
+
+  it.each(['ACTIVE', 'RESTRICTED'])('a non-member who is %s and removes themselves gets 404, not 204', async (status) => {
+    const { project } = await team();
+    const outsider = await createUser({ status });
+    const agent = await signedInAgent(outsider.email);
+
+    expectNotFound(await agent.delete(`/api/projects/${project.id}/members/${outsider.id}`), 'Project not found.');
+  });
+
+  it.each(['SUSPENDED', 'BANNED'])('a %s editor is signed out, so cannot leave', async (status) => {
+    const { editor, project } = await team();
+    const agent = await signedInAgent(editor.email);
+    await prisma.user.update({ where: { id: editor.id }, data: { status } });
+
+    expectError(await agent.delete(`/api/projects/${project.id}/members/${editor.id}`), 401, 'UNAUTHENTICATED');
+    expect(await isMember(project.id, editor.id)).toBe(true);
   });
 });
 

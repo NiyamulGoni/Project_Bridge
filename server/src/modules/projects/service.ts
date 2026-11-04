@@ -363,7 +363,8 @@ export async function inviteMember(user: AuthUser, id: string, email: string) {
   const { project } = await loadProjectFor(user, id, 'own');
   assertNotRemoved(project);
   const invitee = await prisma.user.findUnique({ where: { email } });
-  if (!invitee || BLOCKED_STATUSES.includes(invitee.status)) {
+  // An Admin could never accept, and the shared response does not reveal who is an Admin.
+  if (!invitee || BLOCKED_STATUSES.includes(invitee.status) || invitee.role === 'ADMIN') {
     throw new HttpError(404, 'USER_NOT_FOUND', 'No active ProjectBridge account uses this email.', {
       email: 'No active ProjectBridge account uses this email. Ask them to register first.',
     });
