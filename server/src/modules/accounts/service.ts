@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import type { User } from '@prisma/client';
+import type { Prisma, User } from '@prisma/client';
 import { config } from '../../config.js';
 import { BLOCKED_STATUSES, toAuthUser, type AuthUser } from '../../domain.js';
 import { audit as writeAudit } from '../../lib/audit.js';
@@ -11,6 +11,9 @@ import { hashToken, randomToken } from '../../lib/tokens.js';
 
 // Compared against when the email is unknown, so response time does not reveal which accounts exist.
 const DUMMY_HASH = bcrypt.hashSync('projectbridge-dummy-password', 4);
+
+// Prisma's interactive defaults (2s to get a connection, 5s to finish) are too tight for the remote database.
+const TX_OPTIONS = { maxWait: 10_000, timeout: 15_000 };
 
 function audit(action: string, targetId: string | null, actorId: string | null = targetId, reason?: string) {
   return writeAudit({ action, actorId, targetType: 'User', targetId, reason });
@@ -33,12 +36,20 @@ async function refuseIfBlocked(user: User): Promise<void> {
 }
 
 /** Starts a server-side session; the returned secret goes into the session cookie. */
-async function createSession(user: User): Promise<{ token: string; user: AuthUser }> {
+async function createSession(user: User, client: Prisma.TransactionClient = prisma): Promise<{ token: string; user: AuthUser }> {
   const token = randomToken();
-  await prisma.session.create({
+  await client.session.create({
     data: { userId: user.id, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + config.sessionTtlMs) },
   });
   return { token, user: toAuthUser(user) };
+}
+
+function invalidCredentials(): HttpError {
+  return new HttpError(401, 'INVALID_CREDENTIALS', 'Incorrect email or password.');
+}
+
+function linkAlreadyUsed(): HttpError {
+  return new HttpError(400, 'INVALID_TOKEN', 'This link has already been used.');
 }
 
 function escapeHtml(value: string): string {
@@ -53,17 +64,16 @@ export async function register(input: { name: string; email: string; password: s
       email: 'An account with this email already exists. Try signing in or resetting your password.',
     });
   }
-  const user = await prisma.user.create({
-    data: {
-      name: input.name,
-      email: input.email,
-      passwordHash: await bcrypt.hash(input.password, config.bcryptRounds),
-      role: 'UPLOADER',
-      status: 'ACTIVE',
-    },
-  });
-  await audit('USER_REGISTERED', user.id);
-  return createSession(user);
+  const passwordHash = await bcrypt.hash(input.password, config.bcryptRounds);
+  // Committed together, so a Google link that can see this account also removes its session.
+  const session = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: { name: input.name, email: input.email, passwordHash, role: 'UPLOADER', status: 'ACTIVE' },
+    });
+    return createSession(user, tx);
+  }, TX_OPTIONS);
+  await audit('USER_REGISTERED', session.user.id);
+  return session;
 }
 
 export async function login(email: string, password: string) {
@@ -72,18 +82,34 @@ export async function login(email: string, password: string) {
   const passwordOk = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
   if (!user?.passwordHash || !passwordOk) {
     await audit('LOGIN_FAILED', user?.id ?? null, null, user ? 'wrong password' : 'unknown email');
-    throw new HttpError(401, 'INVALID_CREDENTIALS', 'Incorrect email or password.');
+    throw invalidCredentials();
   }
   await refuseIfBlocked(user);
+
+  const verifiedHash = user.passwordHash;
+  const session = await prisma.$transaction(async (tx) => {
+    // Locks the user row, so a Google link or password reset either commits later and removes this
+    // session, or commits first and this matches nothing. Writing updatedAt back keeps it unchanged.
+    const { count } = await tx.user.updateMany({
+      where: { id: user.id, passwordHash: verifiedHash },
+      data: { updatedAt: user.updatedAt },
+    });
+    return count === 0 ? null : createSession(user, tx);
+  }, TX_OPTIONS);
+  if (!session) {
+    await audit('LOGIN_FAILED', user.id, null, 'password changed during sign-in');
+    throw invalidCredentials();
+  }
   await audit('LOGIN_SUCCEEDED', user.id);
-  return createSession(user);
+  return session;
 }
 
 /**
  * Links Google to an account found by email. Registration does not verify the address, so whoever
  * registered it may not be its owner: their password, sessions and unused reset links all go. The
- * Google user can get a password back through forgot-password, which mails that address. Known gap:
- * a password login already in flight when this commits can still finish, as login() does not re-check.
+ * Google user can get a password back through forgot-password, which mails that address. The user
+ * row comes first, as in every transaction here, so a registration, password sign-in or reset in
+ * flight either commits first and is cleared here, or runs afterwards and finds its password or link gone.
  */
 async function linkGoogle(userId: string, googleId: string): Promise<User> {
   const [user] = await prisma.$transaction([
@@ -143,6 +169,8 @@ export async function forgotPassword(email: string): Promise<void> {
 
   const token = randomToken();
   await prisma.$transaction([
+    // The user row goes first, as in linkGoogle, so the two cannot deadlock. Writing updatedAt back keeps it unchanged.
+    prisma.user.update({ where: { id: user.id }, data: { updatedAt: user.updatedAt } }),
     // A new link replaces any earlier unused one.
     prisma.emailToken.deleteMany({ where: { userId: user.id, type: 'RESET', usedAt: null } }),
     prisma.emailToken.create({
@@ -168,21 +196,30 @@ export async function resetPassword(token: string, password: string): Promise<vo
   if (!record || record.type !== 'RESET' || record.usedAt || record.expiresAt <= new Date()) {
     throw new HttpError(400, 'INVALID_TOKEN', 'This password reset link is invalid or has expired. Please request a new one.');
   }
-  // Conditional update so two simultaneous requests cannot both use the same token.
-  const { count } = await prisma.emailToken.updateMany({
-    where: { id: record.id, usedAt: null },
-    data: { usedAt: new Date() },
-  });
-  if (count === 0) throw new HttpError(400, 'INVALID_TOKEN', 'This link has already been used.');
-  assertNotBlocked(record.user);
+  // A blocked account's link is used up, and nothing else on the account changes.
+  if (BLOCKED_STATUSES.includes(record.user.status)) {
+    const { count } = await prisma.emailToken.updateMany({
+      where: { id: record.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    if (count === 0) throw linkAlreadyUsed();
+    assertNotBlocked(record.user);
+  }
 
-  await prisma.$transaction([
-    prisma.user.update({
-      where: { id: record.userId },
-      data: { passwordHash: await bcrypt.hash(password, config.bcryptRounds) },
-    }),
+  const passwordHash = await bcrypt.hash(password, config.bcryptRounds);
+  await prisma.$transaction(async (tx) => {
+    // The user row goes first, as in linkGoogle, so the two cannot deadlock.
+    await tx.user.update({ where: { id: record.userId }, data: { passwordHash } });
+    // Conditional update so two simultaneous requests cannot both use the same token. No match also
+    // covers a link cancelled while hashing above, and throwing rolls the new password back.
+    const now = new Date();
+    const { count } = await tx.emailToken.updateMany({
+      where: { id: record.id, usedAt: null, expiresAt: { gt: now } },
+      data: { usedAt: now },
+    });
+    if (count === 0) throw linkAlreadyUsed();
     // Sign out every device that used the old password.
-    prisma.session.deleteMany({ where: { userId: record.userId } }),
-  ]);
+    await tx.session.deleteMany({ where: { userId: record.userId } });
+  }, TX_OPTIONS);
   await audit('PASSWORD_RESET', record.userId);
 }

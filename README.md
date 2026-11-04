@@ -65,7 +65,7 @@ Until these are set, everything works except uploads, which return "Screenshot u
 
 New Google users become **Uploaders**. If a Google email matches an existing account, Google is linked to that account and its role is unchanged, but linking removes any existing password, signs out all existing sessions and cancels unused password-reset links. This is because registration does not verify email addresses, so someone else may have registered that address first, and they should not keep a way in once the Google user arrives. The Google user can set a new password through forgot-password. Suspended and banned accounts are refused before anything is linked.
 
-Known gaps in linking: a password sign-in already in progress at that moment can still finish and keep its session for up to 7 days, and team members added to the account's projects before linking stay on them.
+Known gaps in linking: team members added to the account's projects before linking stay on them. A different Google account with the same email replaces the existing link, and a sign-in by the previously linked Google account in flight at that moment can keep its session for up to 7 days; whether a link may be replaced at all is still undecided.
 
 ### Password-reset email (Gmail)
 In `server/.env` set `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, `SMTP_SECURE=true`, `SMTP_USER=<gmail address>` and `SMTP_PASS=<App Password>`. Create the App Password under Google Account → Security → 2-Step Verification → App passwords; it is not your normal password.
@@ -125,6 +125,7 @@ Run `npm test`. The verbose reporter prints one line per check:
 | Sign in / sign out, generic failure message, rate limit | AT01.2 Sign in / sign out |
 | Google sign-in: new user, account linking, banned, unverified, forged token | AT01.3 Sign in with Google |
 | Linking ends the first registrant's sessions, password and unused reset links; the Google user can set a password; a later Google sign-in clears nothing | AT01.3 Google linking shuts out whoever registered the address first |
+| A registration, sign-in or reset overtaken by a linking or password change keeps no session and sets no password; a failed reset keeps its link; a blocked account's link is used up; all of it works on one database connection | AT01.3 Sign-ins and resets overtaken by a linking or password change |
 | Password reset revokes old sessions; link can't be reused | AT01.4 Password reset |
 | Disabled-account feedback; ban invalidates live sessions | AT01.5 Disabled accounts |
 | Deny unauthorized privilege (401 / 403 / 200) | AT01.6 Permission checks |
