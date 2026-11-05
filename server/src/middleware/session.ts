@@ -36,8 +36,9 @@ export function clearSessionCookie(res: Response): void {
  * suspension or ban takes effect on the next protected request (NFR-S3).
  */
 export const loadSession: RequestHandler = async (req, res, next) => {
-  const token: string | undefined = req.cookies?.[SESSION_COOKIE];
-  if (!token) return next();
+  // cookie-parser turns a "j:" value into an object, which is never one of our tokens.
+  const token: unknown = req.cookies?.[SESSION_COOKIE];
+  if (typeof token !== 'string' || !token) return next();
 
   const session = await prisma.session.findUnique({
     where: { tokenHash: hashToken(token) },

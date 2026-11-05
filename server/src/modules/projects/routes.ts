@@ -4,6 +4,7 @@ import { config } from '../../config.js';
 import { HttpError } from '../../lib/errors.js';
 import { param } from '../../lib/params.js';
 import { requireAuth, requirePermission } from '../../middleware/auth.js';
+import { inviteLimiter } from '../../middleware/rateLimit.js';
 import { validateBody } from '../../middleware/validate.js';
 import { ACCEPTED_IMAGE_TYPES } from './media.js';
 import {
@@ -150,14 +151,14 @@ projectsRouter.delete('/:id/milestones/:milestoneId', requirePermission('edit'),
   res.status(204).end();
 });
 
-projectsRouter.post('/:id/members', requirePermission('edit'), validateBody(inviteSchema), async (req, res) => {
+projectsRouter.post('/:id/members', requirePermission('edit'), inviteLimiter, validateBody(inviteSchema), async (req, res) => {
   await projects.inviteMember(req.user!, param(req, 'id'), req.body.email);
   res.status(201).json({ ok: true });
 });
 
 const requireEdit = requirePermission('edit');
 
-/** Removing yourself (leaving a team) only needs a session, even when RESTRICTED. Removing anyone else is an edit. */
+/** Removing yourself (leaving a team) only needs a session, even when RESTRICTED. Removing anyone else is an edit. The param is a user id or a member row id. */
 const requireSelfOrEdit: RequestHandler = (req, res, next) => {
   if (req.user && req.user.id === param(req, 'userId')) {
     next();

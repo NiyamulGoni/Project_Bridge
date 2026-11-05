@@ -47,7 +47,7 @@ npm run dev             # API on :4000, web app on http://localhost:5173
   `DATABASE_URL=<TEST_DATABASE_URL> DIRECT_URL=<TEST_DATABASE_URL> npx prisma db push --skip-generate --accept-data-loss` (from `server/`).
 
 ### Project screenshots (Supabase Storage)
-Screenshots are optional (FR02) and are stored in a **private** Storage bucket. Viewers get signed links that expire after 1 hour.
+Screenshots are optional (FR02) and are stored in a **private** Storage bucket. Viewers get signed links that expire after 15 minutes, because a link keeps working after its project is hidden or deleted.
 1. In the Supabase dashboard, go to Storage → New bucket and name it `project-media`. Leave **Public bucket off**.
 2. In `server/.env`, set `SUPABASE_URL=https://cpuxljxqrbpbbutnlgne.supabase.co` and `SUPABASE_SERVICE_ROLE_KEY=<service_role key from Project Settings → API>`. This key is server-only, so never put it in `client/.env`.
 3. Restart `npm run dev`.
@@ -140,11 +140,15 @@ Run `npm test`. The verbose reporter prints one line per check:
 | FR04 Hide/delete | Hide removes from feed, search and direct view, and is reversible; delete needs the exact title, wipes content and media, and keeps the audit row; owner only; not contactable afterwards | `hideDelete.test.ts` |
 | FR06 Search | Case-insensitive name; all selected tags, whole tags only; name and tags combined; pagination; published only; signed-in only; viewer limits kept | `search.test.ts` |
 | FR07 View | Field-by-field Section 4.2 table for Guest, Uploader (with and without public demo) and Professional; no emails; 404 for unpublished, hidden or deleted; guest cap applies to direct links | `projectView.test.ts` |
+| Response audit | Every GET route, and the mutating routes that return data, scanned per viewer for forbidden keys and values (`tests/responseScan.ts`); exact field lists; 404 for anything unpublished; screenshots signed only for allowed tiers; one guest budget shared by feed and direct links, also under parallel requests | `views.test.ts` |
 
 **Visibility (Section 4.2)** is defined in one table, `FIELDS_BY_TIER` in `server/src/modules/discovery/visibility.ts`:
 - Guests get the title, tags, stage, thumbnail and a 150-character summary.
 - Uploaders also get 500 characters of the overview, plus the demo link and screenshots only if the owner ticked "Show to other Uploaders".
 - Professionals and Admins get the problem, the full overview, demo, screenshots, milestones, progress and team names. No tier ever receives emails.
+- An owner sees a pending or declined invitation only as a status with no name, so an invitation cannot be used to look up who an email belongs to. The name appears once the person accepts.
+- An email is returned in two places only: a user's own in `/api/auth/me`, and the owner's in the Admin review queue.
+- A guest session has one budget of 20 distinct projects, shared by the feed and direct links, and projects already shown stay free to reopen. Clearing cookies starts a new session; SRS 4.6 accepts that limit.
 
 "Contribution/hiring information" is not modelled yet.
 

@@ -1,8 +1,12 @@
-import type { Milestone, ProgressEntry, Project, User } from '@prisma/client';
+import type { Milestone, Prisma, ProgressEntry, Project, User } from '@prisma/client';
 import type { AuthUser } from '../../domain.js';
 
 /** I2: what each viewer may see (proposal Section 4.2). */
 export type ViewerTier = 'GUEST' | 'UPLOADER' | 'PROFESSIONAL';
+
+/** Only published projects are eligible for feeds, search and direct views. */
+export const ELIGIBLE: Prisma.ProjectWhereInput = { status: 'PUBLISHED' };
+export const NEWEST_FIRST: Prisma.ProjectOrderByWithRelationInput[] = [{ publishedAt: 'desc' }, { id: 'desc' }];
 
 export const GUEST_SUMMARY_LIMIT = 150;
 export const UPLOADER_OVERVIEW_LIMIT = 500;
@@ -30,7 +34,7 @@ interface TierRules {
  */
 export const FIELDS_BY_TIER: Record<ViewerTier, TierRules> = {
   GUEST: { summaryLimit: GUEST_SUMMARY_LIMIT, overviewLimit: 0, problem: false, demo: 'never', roadmap: false, team: false },
-  UPLOADER: { summaryLimit: null, overviewLimit: UPLOADER_OVERVIEW_LIMIT, problem: false, demo: 'ifPublic', roadmap: false, team: false },
+  UPLOADER: { summaryLimit: GUEST_SUMMARY_LIMIT, overviewLimit: UPLOADER_OVERVIEW_LIMIT, problem: false, demo: 'ifPublic', roadmap: false, team: false },
   PROFESSIONAL: { summaryLimit: null, overviewLimit: null, problem: true, demo: 'always', roadmap: true, team: true },
 };
 
@@ -95,7 +99,6 @@ export interface TeamMember {
 }
 
 export interface ProjectDetail extends ProjectCard {
-  publishedAt: string | null;
   problem?: string;
   demoUrl?: string | null;
   screenshots?: Array<{ id: string; url: string }>;
@@ -122,7 +125,7 @@ export function toDetail(
   screenshots: Array<{ id: string; url: string }> = [],
 ): ProjectDetail {
   const rules = FIELDS_BY_TIER[tier];
-  const detail: ProjectDetail = { ...toCard(project, tier), publishedAt: project.publishedAt?.toISOString() ?? null };
+  const detail: ProjectDetail = toCard(project, tier);
   if (rules.problem) detail.problem = project.problem;
   if (showsDemo(project, tier)) {
     detail.demoUrl = project.demoUrl;

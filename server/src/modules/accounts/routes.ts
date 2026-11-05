@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { config } from '../../config.js';
+import { toSignInView } from '../../domain.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { authEmailLimiter, loginLimiter } from '../../middleware/rateLimit.js';
 import { clearSessionCookie, setSessionCookie } from '../../middleware/session.js';
@@ -18,19 +19,19 @@ accountsRouter.get('/config', (_req, res) => {
 accountsRouter.post('/register', authEmailLimiter, validateBody(registerSchema), async (req, res) => {
   const { token, user } = await accounts.register(req.body);
   setSessionCookie(res, token);
-  res.status(201).json({ user });
+  res.status(201).json({ user: toSignInView(user) });
 });
 
 accountsRouter.post('/login', loginLimiter, validateBody(loginSchema), async (req, res) => {
   const { token, user } = await accounts.login(req.body.email, req.body.password);
   setSessionCookie(res, token);
-  res.json({ user });
+  res.json({ user: toSignInView(user) });
 });
 
 accountsRouter.post('/google', loginLimiter, validateBody(googleSchema), async (req, res) => {
   const { token, user } = await accounts.loginWithGoogle(req.body.credential);
   setSessionCookie(res, token);
-  res.json({ user });
+  res.json({ user: toSignInView(user) });
 });
 
 accountsRouter.post('/logout', async (req, res) => {

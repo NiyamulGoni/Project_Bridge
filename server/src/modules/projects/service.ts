@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Project, ProjectRevision } from '@prisma/client';
 import { config } from '../../config.js';
-import { BLOCKED_STATUSES, EDITABLE_DRAFT_STATUSES, LIVE_STATUSES, type AuthUser } from '../../domain.js';
+import { EDITABLE_DRAFT_STATUSES, LIVE_STATUSES, type AuthUser } from '../../domain.js';
 import { audit } from '../../lib/audit.js';
 import { HttpError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
@@ -145,7 +145,11 @@ function revisionView(r: ProjectRevision) {
   return { ...contentOf(r), id: r.id, status: r.status, reviewNote: r.reviewNote, createdAt: r.createdAt.toISOString() };
 }
 
-/** Everything the editor and team pages need. Member emails are shown to the owner only. */
+/**
+ * Everything the editor and team pages need. No emails, for anyone. An editor sees only who has
+ * accepted, as the public team does. The owner also sees pending and declined rows, without a name or
+ * user id: inviting needs no consent, so naming them would turn any email address into a person.
+ */
 export async function workspace(user: AuthUser, id: string) {
   const { project, isOwner } = await loadProjectFor(user, id, 'edit');
   const [revision, media, members, milestones, progress] = await Promise.all([
@@ -156,7 +160,7 @@ export async function workspace(user: AuthUser, id: string) {
     prisma.projectMedia.findMany({ where: { projectId: id } }),
     prisma.projectMember.findMany({
       where: { projectId: id },
-      include: { user: { select: { id: true, name: true, email: true } } },
+      include: { user: { select: { name: true } } },
       orderBy: { createdAt: 'asc' },
     }),
     prisma.milestone.findMany({ where: { projectId: id }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
@@ -186,12 +190,13 @@ export async function workspace(user: AuthUser, id: string) {
     media: [...media]
       .sort((a, b) => a.position - b.position)
       .map((m) => ({ id: m.id, url: urls.get(m.id) ?? null, mimeType: m.mimeType, sizeBytes: m.sizeBytes })),
-    members: members.map((m) => ({
-      userId: m.userId,
-      name: m.user.name,
-      email: isOwner ? m.user.email : undefined,
-      status: m.status,
-    })),
+    members: members
+      .filter((m) => isOwner || m.status === 'ACCEPTED')
+      .map((m) =>
+        m.status === 'ACCEPTED'
+          ? { id: m.id, userId: m.userId, name: m.user.name, status: m.status }
+          : { id: m.id, status: m.status },
+      ),
     milestones: milestones.map((m) => ({
       id: m.id,
       title: m.title,
@@ -363,8 +368,9 @@ export async function inviteMember(user: AuthUser, id: string, email: string) {
   const { project } = await loadProjectFor(user, id, 'own');
   assertNotRemoved(project);
   const invitee = await prisma.user.findUnique({ where: { email } });
-  // An Admin could never accept, and the shared response does not reveal who is an Admin.
-  if (!invitee || BLOCKED_STATUSES.includes(invitee.status) || invitee.role === 'ADMIN') {
+  // Admins and blocked accounts cannot accept, but they get a row like anyone else. Answering them
+  // differently could be compared with register's 409 to find out who they are.
+  if (!invitee) {
     throw new HttpError(404, 'USER_NOT_FOUND', 'No active ProjectBridge account uses this email.', {
       email: 'No active ProjectBridge account uses this email. Ask them to register first.',
     });
@@ -387,16 +393,24 @@ export async function inviteMember(user: AuthUser, id: string, email: string) {
   await projectAudit('MEMBER_INVITED', user, id, invitee.id);
 }
 
-/** The owner removes anyone; an editor may remove themselves (leave the team). */
-export async function removeMember(user: AuthUser, id: string, userId: string) {
+/**
+ * The owner removes anyone; an editor may remove themselves (leave the team). `memberRef` is a row id
+ * from the workspace, or the user id of someone who has accepted. A pending row answers only to its
+ * row id, so a user id cannot be used to test whether that person was invited.
+ */
+export async function removeMember(user: AuthUser, id: string, memberRef: string) {
   const { isOwner } = await loadProjectFor(user, id, 'edit');
-  if (!isOwner && userId !== user.id) throw new HttpError(404, 'NOT_FOUND', 'Project not found.');
-  const { count } = await prisma.projectMember.deleteMany({ where: { projectId: id, userId } });
-  if (count === 0) throw new HttpError(404, 'NOT_FOUND', 'Team member not found.');
-  await projectAudit('MEMBER_REMOVED', user, id, userId);
+  if (!isOwner && memberRef !== user.id) throw new HttpError(404, 'NOT_FOUND', 'Project not found.');
+  const member = await prisma.projectMember.findFirst({
+    where: { projectId: id, OR: [{ id: memberRef }, { userId: memberRef, status: 'ACCEPTED' }] },
+  });
+  const { count } = await prisma.projectMember.deleteMany({ where: { id: member?.id ?? '' } });
+  if (!member || count === 0) throw new HttpError(404, 'NOT_FOUND', 'Team member not found.');
+  await projectAudit('MEMBER_REMOVED', user, id, member.userId);
 }
 
 export async function listInvites(user: AuthUser) {
+  if (user.role === 'ADMIN') return []; // An Admin cannot accept (see 'publish'), so an invite is only noise.
   const invites = await prisma.projectMember.findMany({
     where: { userId: user.id, status: 'INVITED', project: { status: { notIn: ['DELETED', 'REMOVED'] } } },
     include: { project: { select: { id: true, title: true, owner: { select: { name: true } } } } },

@@ -67,7 +67,7 @@ describe('Uploader view', () => {
     const { project } = await richProject({ publicDemo: false });
     const p = (await viewAs('UPLOADER', project.id)).body.project;
     expect(p.overview.length).toBeLessThanOrEqual(500);
-    expect(p.summary).toHaveLength(190);
+    expect(p.summary.length).toBeLessThanOrEqual(150);
     for (const hidden of ['problem', 'demoUrl', 'screenshots', 'team', 'owner', 'milestones', 'progress']) {
       expect(p[hidden]).toBeUndefined();
     }

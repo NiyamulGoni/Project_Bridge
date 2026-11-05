@@ -121,7 +121,9 @@ export function Explore() {
           ))}
         </div>
       ) : (
+        // A guest out of budget can have nothing left to show, which is not the same as no projects.
         !error &&
+        capLimit === null &&
         (searching ? (
           <div className="card empty">
             <h2>No projects match {filterText}</h2>

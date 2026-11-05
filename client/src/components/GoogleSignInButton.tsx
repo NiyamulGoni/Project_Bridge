@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { api, ApiError, type User } from '../api';
+import { api, ApiError } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import { Alert } from './Alert';
 
@@ -72,7 +72,7 @@ export function GoogleSignInButton({ text = 'signin_with' }: { text?: 'signin_wi
           callback: async ({ credential }) => {
             setError('');
             try {
-              await api<{ user: User }>('/auth/google', { body: { credential } });
+              await api('/auth/google', { body: { credential } });
               await refresh();
               navigate('/account', { replace: true });
             } catch (err) {

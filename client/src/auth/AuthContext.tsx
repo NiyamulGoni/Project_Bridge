@@ -32,7 +32,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const login = useCallback(async (email: string, password: string) => {
-    const { user } = await api<{ user: User }>('/auth/login', { body: { email, password } });
+    await api('/auth/login', { body: { email, password } });
+    // The sign-in response leaves out the email, which only /auth/me returns.
+    const { user } = await api<{ user: User }>('/auth/me');
     setUser(user);
     return user;
   }, []);

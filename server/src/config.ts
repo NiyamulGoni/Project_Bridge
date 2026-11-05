@@ -19,6 +19,7 @@ export const config = {
   resetTokenTtlMs: 60 * 60 * 1000,
   loginMaxAttempts: int('LOGIN_MAX_ATTEMPTS', 5),
   authRateLimit: int('AUTH_RATE_LIMIT', 20),
+  inviteRateLimit: int('INVITE_RATE_LIMIT', 20),
   guestCardLimit: 20,
   feedPageSize: 10,
   /** Screenshots and cover images (FR02): optional, stored in Supabase Storage. */
@@ -33,7 +34,8 @@ export const config = {
     coverBucket: process.env.COVER_BUCKET ?? 'project-covers',
     maxFiles: 5,
     maxBytes: 2 * 1024 * 1024,
-    signedUrlTtlSeconds: 60 * 60,
+    /** A signed URL stays valid after its project is hidden or deleted, so it is kept short. */
+    signedUrlTtlSeconds: 15 * 60,
   },
   /** OAuth client ID for "Sign in with Google"; empty disables it. */
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',

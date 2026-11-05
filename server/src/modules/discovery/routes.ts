@@ -7,15 +7,11 @@ import { prisma } from '../../lib/prisma.js';
 import { param } from '../../lib/params.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { signScreenshots } from '../projects/media.js';
-import { admitGuestToProject, getGuestSession, guestCardLimit, recordGuestExposure } from './guestLimit.js';
-import { showsDemo, toCard, toDetail, viewerTier } from './visibility.js';
+import { admitGuestToProject, getGuestSession, guestCardLimit, guestFeedPage, guestLimitReached } from './guestLimit.js';
+import { ELIGIBLE, NEWEST_FIRST, showsDemo, toCard, toDetail, viewerTier } from './visibility.js';
 
 /** FR05–FR07: the public, role-aware side of projects. */
 export const discoveryRouter = Router();
-
-/** Only published projects are eligible for feeds, search and direct views. */
-const ELIGIBLE: Prisma.ProjectWhereInput = { status: 'PUBLISHED' };
-const NEWEST_FIRST: Prisma.ProjectOrderByWithRelationInput[] = [{ publishedAt: 'desc' }, { id: 'desc' }];
 
 const pageParam = z.coerce.number().int().min(1).max(1000).default(1);
 const feedQuery = z.object({ page: pageParam });
@@ -28,16 +24,14 @@ discoveryRouter.get('/feed', async (req, res) => {
   const offset = (page - 1) * pageSize;
   const tier = viewerTier(req.user);
 
-  // Guests can see only the first `limit` feed positions per anonymous session.
-  let take = pageSize;
-  let guest: Awaited<ReturnType<typeof getGuestSession>> | undefined;
   if (tier === 'GUEST') {
-    guest = await getGuestSession(req, res);
+    // No page starts at or beyond the limit, whatever the session has seen so far.
     const limit = guestCardLimit();
-    if (offset >= limit) {
-      throw new HttpError(403, 'GUEST_LIMIT', `Guests can browse ${limit} projects. Sign in or register to keep exploring.`);
-    }
-    take = Math.min(pageSize, limit - offset);
+    if (offset >= limit) throw guestLimitReached();
+    const guest = await getGuestSession(req, res);
+    const { rows, hasMore, cardsServed, capReached } = await guestFeedPage(guest.id, offset, pageSize);
+    res.json({ tier, page, pageSize, items: rows.map((p) => toCard(p, tier)), hasMore, guest: { limit, cardsServed, capReached } });
+    return;
   }
 
   const rows = await prisma.project.findMany({
@@ -45,22 +39,9 @@ discoveryRouter.get('/feed', async (req, res) => {
     orderBy: NEWEST_FIRST,
     include: { owner: { select: { name: true } } },
     skip: offset,
-    take: take + 1,
+    take: pageSize + 1,
   });
-  const items = rows.slice(0, take).map((p) => toCard(p, tier));
-  let hasMore = rows.length > take;
-  let guestInfo: { limit: number; cardsServed: number; capReached: boolean } | undefined;
-
-  if (guest) {
-    const limit = guestCardLimit();
-    const cardsServed = await recordGuestExposure(guest.id, offset + items.length, items.map((c) => c.id));
-    // More projects exist, but this guest has used up the allowed positions.
-    const capReached = offset + items.length >= limit && hasMore;
-    if (capReached) hasMore = false;
-    guestInfo = { limit, cardsServed, capReached };
-  }
-
-  res.json({ tier, page, pageSize, items, hasMore, guest: guestInfo });
+  res.json({ tier, page, pageSize, items: rows.slice(0, pageSize).map((p) => toCard(p, tier)), hasMore: rows.length > pageSize });
 });
 
 const searchQuery = z.object({
@@ -131,8 +112,20 @@ discoveryRouter.get('/tags', requireAuth, async (_req, res) => {
  */
 discoveryRouter.get('/:id', async (req, res) => {
   const tier = viewerTier(req.user);
+  const where: Prisma.ProjectWhereInput = { ...ELIGIBLE, id: param(req, 'id') };
+
+  // A guest's view is the card, so nothing else about the project is loaded, let alone signed.
+  // The budget is charged only after the 404 check, so a project they may not know of costs nothing.
+  if (tier === 'GUEST') {
+    const project = await prisma.project.findFirst({ where, include: { owner: { select: { name: true } } } });
+    if (!project) throw new HttpError(404, 'NOT_FOUND', 'Project not found.');
+    await admitGuestToProject(await getGuestSession(req, res), project.id);
+    res.json({ tier, project: toCard(project, tier) });
+    return;
+  }
+
   const project = await prisma.project.findFirst({
-    where: { ...ELIGIBLE, id: param(req, 'id') },
+    where,
     include: {
       owner: { select: { name: true } },
       members: { where: { status: 'ACCEPTED' }, include: { user: { select: { name: true } } } },
@@ -142,8 +135,6 @@ discoveryRouter.get('/:id', async (req, res) => {
     },
   });
   if (!project) throw new HttpError(404, 'NOT_FOUND', 'Project not found.');
-
-  if (tier === 'GUEST') await admitGuestToProject(await getGuestSession(req, res), project.id);
 
   const screenshots = showsDemo(project, tier) ? await signScreenshots(project.media) : [];
   res.json({ tier, project: toDetail(project, tier, screenshots) });

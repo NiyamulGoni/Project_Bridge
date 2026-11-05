@@ -196,13 +196,10 @@ export function ProjectManage() {
             <span className="badge badge-accent">Owner</span>
           </li>
           {ws.members.map((m) => (
-            <li key={m.userId} className="list-row">
+            <li key={m.id} className="list-row">
               <div className="row">
-                <Avatar name={m.name} size={30} />
-                <div>
-                  <div>{m.name}</div>
-                  {m.email && <div className="muted small">{m.email}</div>}
-                </div>
+                <Avatar name={m.name ?? '?'} size={30} />
+                <span>{m.name ?? (m.status === 'INVITED' ? 'Pending invitation' : 'Declined invitation')}</span>
               </div>
               <div className="row">
                 <span className={`badge ${m.status === 'ACCEPTED' ? 'badge-success' : ''}`}>{MEMBER_LABELS[m.status]}</span>
@@ -211,7 +208,7 @@ export function ProjectManage() {
                     type="button"
                     className="btn btn-ghost btn-sm"
                     disabled={busy}
-                    onClick={() => run('team', () => api(`/projects/${id}/members/${m.userId}`, { method: 'DELETE' }), `${m.name} was removed.`)}
+                    onClick={() => run('team', () => api(`/projects/${id}/members/${m.id}`, { method: 'DELETE' }), m.name ? `${m.name} was removed.` : 'The invitation was removed.')}
                   >
                     Remove
                   </button>

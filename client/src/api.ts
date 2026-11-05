@@ -64,7 +64,6 @@ export const MILESTONE_LABELS: Record<MilestoneStatus, string> = { PLANNED: 'Pla
 
 /** FR07: what the server chose to send for this viewer; absent fields are not available to them. */
 export interface ProjectDetail extends ProjectCard {
-  publishedAt: string | null;
   problem?: string;
   demoUrl?: string | null;
   screenshots?: Array<{ id: string; url: string }>;
@@ -105,7 +104,8 @@ export interface Workspace {
   };
   revision: Revision | null;
   media: Array<{ id: string; url: string | null; mimeType: string; sizeBytes: number }>;
-  members: Array<{ userId: string; name: string; email?: string; status: 'INVITED' | 'ACCEPTED' | 'DECLINED' }>;
+  /** Someone who has not accepted has no name or user id here. */
+  members: Array<{ id: string; userId: string; name: string; status: 'ACCEPTED' } | { id: string; userId?: undefined; name?: undefined; status: 'INVITED' | 'DECLINED' }>;
   milestones: Array<{ id: string; title: string; status: MilestoneStatus; dueDate: string | null }>;
   progress: Array<{ id: string; body: string; createdAt: string; authorName: string }>;
 }

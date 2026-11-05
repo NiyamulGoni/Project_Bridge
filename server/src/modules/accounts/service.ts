@@ -6,14 +6,11 @@ import { audit as writeAudit } from '../../lib/audit.js';
 import { HttpError } from '../../lib/errors.js';
 import { getGoogleVerifier } from '../../lib/google.js';
 import { getMailer } from '../../lib/mailer.js';
-import { prisma } from '../../lib/prisma.js';
+import { prisma, TX_OPTIONS } from '../../lib/prisma.js';
 import { hashToken, randomToken } from '../../lib/tokens.js';
 
 // Compared against when the email is unknown, so response time does not reveal which accounts exist.
 const DUMMY_HASH = bcrypt.hashSync('projectbridge-dummy-password', 4);
-
-// Prisma's interactive defaults (2s to get a connection, 5s to finish) are too tight for the remote database.
-const TX_OPTIONS = { maxWait: 10_000, timeout: 15_000 };
 
 function audit(action: string, targetId: string | null, actorId: string | null = targetId, reason?: string) {
   return writeAudit({ action, actorId, targetType: 'User', targetId, reason });

@@ -27,9 +27,12 @@ describe('AT01.1 Registration', () => {
       .send({ name: 'Riyad', email: 'Riyad@Example.com ', password: PASSWORD });
 
     expect(res.status).toBe(201);
-    expect(res.body.user).toMatchObject({ email: 'riyad@example.com', role: 'UPLOADER', hasPassword: true });
+    expect(res.body.user).toMatchObject({ role: 'UPLOADER', hasPassword: true });
+    expect(res.body.user.email).toBeUndefined();
     expect(String(res.headers['set-cookie'])).toContain('pb_session=');
-    expect((await agent.get('/api/auth/me')).status).toBe(200);
+    const me = await agent.get('/api/auth/me');
+    expect(me.status).toBe(200);
+    expect(me.body.user.email).toBe('riyad@example.com');
     expect(mailer.outbox).toHaveLength(0);
 
     const stored = await prisma.user.findUniqueOrThrow({ where: { email: 'riyad@example.com' } });
@@ -125,8 +128,11 @@ describe('AT01.3 Sign in with Google', () => {
     const res = await agent.post('/api/auth/google').send({ credential: 'google:new'.padEnd(30, 'x') });
 
     expect(res.status).toBe(200);
-    expect(res.body.user).toMatchObject({ email: identity.email, role: 'UPLOADER', hasPassword: false, googleLinked: true });
-    expect((await agent.get('/api/auth/me')).status).toBe(200);
+    expect(res.body.user).toMatchObject({ role: 'UPLOADER', hasPassword: false, googleLinked: true });
+    expect(res.body.user.email).toBeUndefined();
+    const me = await agent.get('/api/auth/me');
+    expect(me.status).toBe(200);
+    expect(me.body.user.email).toBe(identity.email);
     expect(await prisma.user.count()).toBe(1);
   });
 

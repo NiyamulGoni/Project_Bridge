@@ -94,6 +94,17 @@ describe('Guest 20-card cap', () => {
     expect(page3.body.error.code).toBe('GUEST_LIMIT');
   });
 
+  it('does not show the sign-in prompt when nothing lies beyond the cards served', async () => {
+    await seedProjects(20);
+    const guest = request.agent(app);
+
+    await guest.get('/api/projects/feed?page=1');
+    const page2 = await guest.get('/api/projects/feed?page=2');
+    expect(page2.body.items).toHaveLength(10);
+    expect(page2.body.hasMore).toBe(false);
+    expect(page2.body.guest).toMatchObject({ limit: 20, cardsServed: 20, capReached: false });
+  });
+
   it('applies the cap even to a direct request without a guest cookie', async () => {
     await seedProjects(30);
     const res = await request(app).get('/api/projects/feed?page=3');

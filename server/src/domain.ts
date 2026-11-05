@@ -32,6 +32,18 @@ export function toAuthUser(user: User): AuthUser {
   };
 }
 
+/** What a sign-in response says about the account. Only /api/auth/me returns the email. */
+export function toSignInView(user: AuthUser) {
+  return {
+    id: user.id,
+    name: user.name,
+    role: user.role,
+    status: user.status,
+    hasPassword: user.hasPassword,
+    googleLinked: user.googleLinked,
+  };
+}
+
 export const PROJECT_STAGES = ['IDEA', 'PROTOTYPE', 'MVP', 'PILOT', 'LAUNCHED'] as const;
 export type ProjectStage = (typeof PROJECT_STAGES)[number];
 

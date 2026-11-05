@@ -106,17 +106,24 @@ describe('Team membership', () => {
     expect((await proAgent.post(`/api/projects/${project.id}/members`).send({ email: third.email })).status).toBe(404);
   });
 
-  it('answers an invite to an Admin exactly as it does an unknown email', async () => {
-    const { project, ownerAgent } = await publishedSetup();
+  it('answers an invite to an Admin or a blocked account exactly as it does an ordinary one', async () => {
+    const { project, ownerAgent, pro } = await publishedSetup();
+    const invite = (email: string) => ownerAgent.post(`/api/projects/${project.id}/members`).send({ email });
     const admin = await createUser({ role: 'ADMIN' });
+    const banned = await createUser({ status: 'BANNED' });
 
-    const toAdmin = await ownerAgent.post(`/api/projects/${project.id}/members`).send({ email: admin.email });
-    const toNobody = await ownerAgent.post(`/api/projects/${project.id}/members`).send({ email: 'nobody@example.com' });
+    const ordinary = await invite(pro.email);
+    expect(ordinary.status).toBe(201);
+    for (const email of [admin.email, banned.email]) {
+      const res = await invite(email);
+      expect({ status: res.status, body: res.body }).toEqual({ status: ordinary.status, body: ordinary.body });
+    }
+    expect((await invite(admin.email)).status).toBe(409);
+    expect((await invite(pro.email)).status).toBe(409);
 
-    expect(toAdmin.status).toBe(404);
-    expect(toAdmin.body.error.code).toBe('USER_NOT_FOUND');
-    expect(toAdmin.body).toEqual(toNobody.body);
-    expect(await prisma.projectMember.count({ where: { projectId: project.id } })).toBe(0);
+    const { body } = await ownerAgent.get(`/api/projects/${project.id}/workspace`);
+    expect(body.members.map((m: { status: string }) => m.status)).toEqual(['INVITED', 'INVITED', 'INVITED']);
+    expect((await invite('nobody@example.com')).status).toBe(404);
   });
 
   it('keeps editor rights after the editor’s role changes', async () => {

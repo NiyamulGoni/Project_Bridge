@@ -18,6 +18,16 @@ export const loginLimiter = rateLimit({
   message: message('Too many failed sign-in attempts. Please wait 15 minutes and try again.'),
 });
 
+/** Invites say whether an address has an account, so they get the same throttle as register, per signed-in user. */
+export const inviteLimiter = rateLimit({
+  windowMs: WINDOW_MS,
+  limit: config.inviteRateLimit,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user!.id,
+  message: message('Too many invitations. Please wait a few minutes and try again.'),
+});
+
 /** Registration, resend and password-reset requests, which trigger emails. */
 export const authEmailLimiter = rateLimit({
   windowMs: WINDOW_MS,
