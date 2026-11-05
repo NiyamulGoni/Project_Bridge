@@ -112,6 +112,10 @@ New features go in a new `server/src/modules/<name>/` folder with `routes.ts` an
 - Registration always creates an **Uploader**; a `role` field in the request is ignored. Professional and Admin roles can only be assigned by an Admin (FR15, later).
 - Failed sign-ins are rate-limited: 5 per 15 minutes per IP and email (per IP alone for Google sign-in, whose requests carry no email). Forgot-password never reveals whether an email is registered.
 - Restricted feed fields are left out of the API response, not just hidden in the browser.
+- A production server refuses to start unless `NODE_ENV=production` and `APP_URL` (https), `TRUST_PROXY` and `ENCRYPTION_KEYS` are set. Most hosting platforms need `TRUST_PROXY=1`; see `server/.env.example`. The server also refuses to start if `NODE_ENV` is not set at all.
+- Production redirects HTTP to HTTPS and sends HSTS. A state-changing request whose `Origin` differs from `APP_URL` gets 403 `BAD_ORIGIN`; in development, any localhost port is also accepted, because Vite can move ports.
+- Error responses never carry a stack trace or database text.
+- `server/src/lib/crypto.ts` provides AES-256-GCM encryption with versioned keys for private text columns. No column uses it yet. Losing a key makes data encrypted with it unrecoverable, so back keys up outside the repo.
 
 **Scope change to record:** proposal FR01 lists "verify email". Email verification was removed at the team's request, and Google sign-in was added. Record this as a teacher-approved scope change (proposal §7.4).
 

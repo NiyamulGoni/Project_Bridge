@@ -329,7 +329,7 @@ describe('Route inventory', () => {
       .filter((layer) => !layer.route)
       .map((layer) => ROUTERS.find(([, router]) => router === layer.handle)?.[0] ?? layer.name);
     expect(mounted).toEqual([
-      'helmetMiddleware', 'jsonParser', 'cookieParser', 'loadSession',
+      'requireHttps', 'helmetMiddleware', 'checkOrigin', 'jsonParser', 'cookieParser', 'loadSession',
       'accounts', 'projects', 'discovery', 'admin',
       '<anonymous>', 'errorHandler',
     ]);

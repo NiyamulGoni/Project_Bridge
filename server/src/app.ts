@@ -1,7 +1,9 @@
 import cookieParser from 'cookie-parser';
 import express from 'express';
 import helmet from 'helmet';
+import { config } from './config.js';
 import { errorHandler, HttpError } from './lib/errors.js';
+import { checkOrigin, requireHttps } from './middleware/security.js';
 import { loadSession } from './middleware/session.js';
 import { accountsRouter } from './modules/accounts/routes.js';
 import { adminRouter } from './modules/admin/routes.js';
@@ -10,9 +12,15 @@ import { projectsRouter } from './modules/projects/routes.js';
 
 export function createApp() {
   const app = express();
-  app.set('trust proxy', 'loopback');
+  app.set('trust proxy', config.trustProxy);
   app.disable('x-powered-by');
-  app.use(helmet());
+  app.use(requireHttps);
+  app.use(
+    helmet({
+      strictTransportSecurity: config.isProd ? { maxAge: 15552000, includeSubDomains: true } : false,
+    }),
+  );
+  app.use(checkOrigin);
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
   app.use(loadSession);

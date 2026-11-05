@@ -20,6 +20,8 @@ export default defineConfig({
       LOGIN_MAX_ATTEMPTS: '5',
       AUTH_RATE_LIMIT: '1000',
       GOOGLE_CLIENT_ID: 'test-client-id.apps.googleusercontent.com',
+      // TEST ONLY, never use this key for real data. The bytes spell out what it is.
+      ENCRYPTION_KEYS: `1:${Buffer.from('TEST-ONLY-KEY-never-use-for-real').toString('base64')}`,
     },
     globalSetup: ['./tests/globalSetup.ts'],
     // Tests share one database schema, so files run one at a time.

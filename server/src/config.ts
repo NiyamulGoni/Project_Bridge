@@ -6,12 +6,22 @@ function int(name: string, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
 }
 
+/** A number of proxy hops, or a value Express understands such as "loopback". */
+function trustProxy(raw: string | undefined): number | string {
+  const value = raw?.trim();
+  if (!value) return 'loopback';
+  return /^\d+$/.test(value) ? Number(value) : value;
+}
+
 const nodeEnv = process.env.NODE_ENV ?? 'development';
 
 export const config = {
   nodeEnv,
   isProd: nodeEnv === 'production',
   isTest: nodeEnv === 'test',
+  /** Set only by an explicit NODE_ENV=development, so a deployment missing NODE_ENV gets no dev allowances. */
+  isExplicitDev: process.env.NODE_ENV === 'development',
+  trustProxy: trustProxy(process.env.TRUST_PROXY),
   port: int('PORT', 4000),
   appUrl: (process.env.APP_URL ?? 'http://localhost:5173').replace(/\/$/, ''),
   bcryptRounds: int('BCRYPT_ROUNDS', 12),
@@ -50,3 +60,14 @@ export const config = {
     pass: process.env.SMTP_PASS ?? '',
   },
 };
+
+// The HTTPS redirect, Secure cookies and the Origin check all rely on this URL.
+if (config.isProd && !config.appUrl.startsWith('https://')) {
+  throw new Error('APP_URL must start with https:// when NODE_ENV is production.');
+}
+
+// Behind a proxy this decides whether a request counts as HTTPS. If it is wrong, every request looks
+// like HTTP and the redirect loops forever, while the exempt health check still reports a healthy deploy.
+if (config.isProd && !process.env.TRUST_PROXY?.trim()) {
+  throw new Error('TRUST_PROXY must be set when NODE_ENV is production: a number of proxy hops (most hosting platforms need 1), or loopback for a proxy on this machine.');
+}
