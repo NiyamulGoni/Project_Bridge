@@ -53,7 +53,8 @@ class SupabaseStorage implements MediaStorage {
       console.error(`[storage] Could not sign ${path}: ${error.message}`);
       return null;
     }
-    // Open question: Supabase's URL includes the object path, so this is the one place a path reaches a viewer.
+    // Accepted exception to "never return storage paths": Supabase's URL includes the object path. The
+    // path is a project id and a random UUID, and it is useless without the short-lived token.
     return data.signedUrl;
   }
 

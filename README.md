@@ -151,6 +151,8 @@ Run `npm test`. The verbose reporter prints one line per check:
 - Uploaders also get 500 characters of the overview, plus the demo link and screenshots only if the owner ticked "Show to other Uploaders".
 - Professionals and Admins get the problem, the full overview, demo, screenshots, milestones, progress and team names. No tier ever receives emails.
 - An owner sees a pending or declined invitation only as a status with no name, so an invitation cannot be used to look up who an email belongs to. The name appears once the person accepts.
+- Invitations to Admins and blocked accounts look like any other, so they cannot reveal who those accounts are. They cannot be accepted, and stay pending for the owner.
+- Storage paths are never returned as a field. The one accepted exception is the path inside a Supabase signed URL, which is a project id and a random UUID, and is useless without the short-lived token.
 - An email is returned in two places only: a user's own in `/api/auth/me`, and the owner's in the Admin review queue.
 - A guest session has one budget of 20 distinct projects, shared by the feed and direct links, and projects already shown stay free to reopen. Clearing cookies starts a new session; SRS 4.6 accepts that limit.
 
