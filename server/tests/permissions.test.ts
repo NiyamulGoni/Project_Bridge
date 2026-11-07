@@ -65,6 +65,9 @@ const ADMIN_ROUTES: ListedRoute[] = [
   { method: 'post', path: '/reviews/projects/:id/request-changes', gate: 'review', body: { note: 'Please add a demo.' } },
   { method: 'post', path: '/reviews/revisions/:id/approve', gate: 'review' },
   { method: 'post', path: '/reviews/revisions/:id/reject', gate: 'review', body: { note: 'The demo link is broken.' } },
+  { method: 'get', path: '/reports', gate: 'review' },
+  { method: 'get', path: '/reports/:id', gate: 'review' },
+  { method: 'post', path: '/reports/:id/dismiss', gate: 'review', body: { note: 'Nothing wrong was found.' } },
 ];
 
 const projectUrl = (route: ListedRoute) => `/api/projects${route.path === '/' ? '' : route.path.replace(/:\w+/g, 'no-such-id')}`;
@@ -88,7 +91,10 @@ function expectNotFound(res: { status: number; body: { error?: { code?: string; 
 }
 
 const projectNotFound = (route: ListedRoute) => (route.path.startsWith('/invites/') ? 'Invitation not found.' : 'Project not found.');
-const reviewNotFound = (route: ListedRoute) => (route.path.startsWith('/reviews/projects/') ? 'No submission waiting for review.' : 'No revision waiting for review.');
+const reviewNotFound = (route: ListedRoute) => {
+  if (route.path.startsWith('/reports/')) return 'No open report with that id.';
+  return route.path.startsWith('/reviews/projects/') ? 'No submission waiting for review.' : 'No revision waiting for review.';
+};
 
 const PERSONAS = {
   uploader: { role: 'UPLOADER', status: 'ACTIVE' },

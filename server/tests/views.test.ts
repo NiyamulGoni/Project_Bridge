@@ -12,6 +12,9 @@ import { hashToken, randomToken } from '../src/lib/tokens.js';
 import { SESSION_COOKIE } from '../src/middleware/session.js';
 import { accountsRouter } from '../src/modules/accounts/routes.js';
 import { adminRouter } from '../src/modules/admin/routes.js';
+import { notificationsRouter } from '../src/modules/notifications/routes.js';
+import { reportsRouter } from '../src/modules/reports/routes.js';
+import { encrypt } from '../src/lib/crypto.js';
 import { GUEST_COOKIE } from '../src/modules/discovery/guestLimit.js';
 import { discoveryRouter } from '../src/modules/discovery/routes.js';
 import { projectsRouter } from '../src/modules/projects/routes.js';
@@ -73,6 +76,7 @@ const unpublished = {} as Record<UnpublishedStatus, Project>;
 let secrets: string[];
 /** Those, plus what must stay off every public response even for the people who may see it elsewhere. */
 let publicSecrets: string[];
+let fixtureReport: { id: string };
 
 // Signed URLs here are recorded, so a URL in a response can be traced to this call. They are also opaque,
 // which the real ones are not: Supabase's URL includes the object path. So these tests show the path is
@@ -183,6 +187,10 @@ beforeAll(async () => {
     ...media.map((m) => m.storagePath),
     ...rawTokens,
   ].filter(Boolean);
+  fixtureReport = await prisma.report.create({
+    data: { reporterId: users.uploader.id, targetType: 'PROJECT', targetId: live.id, reason: encrypt('This copies another team\'s work.', 'Report.reason') },
+  });
+
   publicSecrets = [
     ...secrets,
     UNPUBLISHED_MARKER,
@@ -230,7 +238,7 @@ describe('responseScan', () => {
 
 // ---------------------------------------------------------------- Every GET route, as every viewer
 
-type RouterName = 'app' | 'accounts' | 'projects' | 'discovery' | 'admin';
+type RouterName = 'app' | 'accounts' | 'projects' | 'discovery' | 'notifications' | 'reports' | 'admin';
 
 interface GetRoute {
   router: RouterName;
@@ -260,7 +268,11 @@ const GET_ROUTES: GetRoute[] = [
   { router: 'discovery', path: '/search', urls: () => ['/api/projects/search', '/api/projects/search?q=monitor&tags=iot'], statuses: signedIn, isPublic: true },
   { router: 'discovery', path: '/tags', urls: () => ['/api/projects/tags'], statuses: signedIn, isPublic: true },
   { router: 'discovery', path: '/:id', urls: () => [`/api/projects/${live.id}`, `/api/projects/${liveDemo.id}`], statuses: everyone(200), isPublic: true },
+  { router: 'notifications', path: '/', urls: () => ['/api/notifications'], statuses: signedIn },
+  { router: 'notifications', path: '/unread-count', urls: () => ['/api/notifications/unread-count'], statuses: signedIn },
   { router: 'admin', path: '/ping', urls: () => ['/api/admin/ping'], statuses: adminOnly },
+  { router: 'admin', path: '/reports', urls: () => ['/api/admin/reports'], statuses: adminOnly },
+  { router: 'admin', path: '/reports/:id', urls: () => [`/api/admin/reports/${fixtureReport.id}`], statuses: adminOnly },
   { router: 'admin', path: '/reviews', urls: () => ['/api/admin/reviews'], statuses: adminOnly, allow: ['submissions[].owner.email', 'revisions[].owner.email'] },
 ];
 
@@ -299,6 +311,8 @@ const ROUTERS: [RouterName, Router][] = [
   ['accounts', accountsRouter],
   ['projects', projectsRouter],
   ['discovery', discoveryRouter],
+  ['notifications', notificationsRouter],
+  ['reports', reportsRouter],
   ['admin', adminRouter],
 ];
 const layersOf = (router: Router) => (router as unknown as { stack: RouterLayer[] }).stack;
@@ -324,13 +338,13 @@ describe('Route inventory', () => {
   });
 
   // Anything else mounted on the app could hold routes that no check above would walk.
-  it('the app mounts the four routers and otherwise only known middleware', () => {
+  it('the app mounts the known routers and otherwise only known middleware', () => {
     const mounted = appLayers()
       .filter((layer) => !layer.route)
       .map((layer) => ROUTERS.find(([, router]) => router === layer.handle)?.[0] ?? layer.name);
     expect(mounted).toEqual([
       'requireHttps', 'helmetMiddleware', 'checkOrigin', 'jsonParser', 'cookieParser', 'loadSession',
-      'accounts', 'projects', 'discovery', 'admin',
+      'accounts', 'projects', 'discovery', 'notifications', 'reports', 'admin',
       '<anonymous>', 'errorHandler',
     ]);
   });

@@ -28,6 +28,16 @@ export const inviteLimiter = rateLimit({
   message: message('Too many invitations. Please wait a few minutes and try again.'),
 });
 
+/** Per signed-in user, so one account cannot flood the Admin queue. */
+export const reportLimiter = rateLimit({
+  windowMs: WINDOW_MS,
+  limit: config.reportRateLimit,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user!.id,
+  message: message('Too many reports. Please wait a few minutes and try again.'),
+});
+
 /** Registration, resend and password-reset requests, which trigger emails. */
 export const authEmailLimiter = rateLimit({
   windowMs: WINDOW_MS,

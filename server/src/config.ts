@@ -30,6 +30,7 @@ export const config = {
   loginMaxAttempts: int('LOGIN_MAX_ATTEMPTS', 5),
   authRateLimit: int('AUTH_RATE_LIMIT', 20),
   inviteRateLimit: int('INVITE_RATE_LIMIT', 20),
+  reportRateLimit: int('REPORT_RATE_LIMIT', 10),
   guestCardLimit: 20,
   feedPageSize: 10,
   /** Screenshots and cover images (FR02): optional, stored in Supabase Storage. */

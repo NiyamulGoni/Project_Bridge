@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import type { Project, ProjectRevision } from '@prisma/client';
+import type { Prisma, Project, ProjectRevision } from '@prisma/client';
 import { config } from '../../config.js';
 import { EDITABLE_DRAFT_STATUSES, LIVE_STATUSES, type AuthUser } from '../../domain.js';
 import { audit } from '../../lib/audit.js';
 import { HttpError } from '../../lib/errors.js';
-import { prisma } from '../../lib/prisma.js';
+import { prisma, TX_OPTIONS } from '../../lib/prisma.js';
 import { getCoverStorage, getStorage } from '../../lib/storage.js';
 import { toDetail } from '../discovery/visibility.js';
+import { notify } from '../notifications/service.js';
 import { loadProjectFor } from './access.js';
 import { imageExtension, signScreenshots } from './media.js';
 import { completeProjectSchema, type ProjectInput } from './schemas.js';
@@ -16,8 +17,8 @@ const CONTENT_FIELDS = ['title', 'summary', 'problem', 'overview', 'tags', 'demo
 type ContentField = (typeof CONTENT_FIELDS)[number];
 type Content = Pick<Project, ContentField>;
 
-function projectAudit(action: string, actor: AuthUser, projectId: string, reason?: string) {
-  return audit({ action, actorId: actor.id, targetType: 'Project', targetId: projectId, reason });
+function projectAudit(action: string, actor: AuthUser, projectId: string, reason?: string, client?: Prisma.TransactionClient) {
+  return audit({ action, actorId: actor.id, targetType: 'Project', targetId: projectId, reason }, client);
 }
 
 function contentOf(source: Content): Content {
@@ -385,12 +386,24 @@ export async function inviteMember(user: AuthUser, id: string, email: string) {
     const msg = existing.status === 'ACCEPTED' ? 'This person is already on the team.' : 'This person has already been invited.';
     throw new HttpError(409, 'ALREADY_MEMBER', msg, { email: msg });
   }
-  if (existing) {
-    await prisma.projectMember.update({ where: { id: existing.id }, data: { status: 'INVITED', invitedById: user.id } });
-  } else {
-    await prisma.projectMember.create({ data: { projectId: id, userId: invitee.id, invitedById: user.id } });
-  }
-  await projectAudit('MEMBER_INVITED', user, id, invitee.id);
+  await prisma.$transaction(async (tx) => {
+    if (existing) {
+      await tx.projectMember.update({ where: { id: existing.id }, data: { status: 'INVITED', invitedById: user.id } });
+    } else {
+      await tx.projectMember.create({ data: { projectId: id, userId: invitee.id, invitedById: user.id } });
+    }
+    await projectAudit('MEMBER_INVITED', user, id, invitee.id, tx);
+    await notify(
+      {
+        recipientId: invitee.id,
+        eventType: 'TEAM_INVITE',
+        message: `${user.name} invited you to join "${project.title}".`,
+        targetType: 'Project',
+        targetId: id,
+      },
+      tx,
+    );
+  }, TX_OPTIONS);
 }
 
 /**

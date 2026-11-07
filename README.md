@@ -96,7 +96,9 @@ server/
   src/modules/accounts/       FR01 register / login / Google / logout / forgot / reset
   src/modules/projects/       FR02–FR04 drafts, submit, revisions, screenshots, team, progress, milestones, hide, delete
   src/modules/discovery/      FR05 feed, FR06 search, FR07 project view; visibility.ts holds the Section 4.2 field table
-  src/modules/admin/          Admin-only routes: review queue (reviews.ts); FR13–FR16 will attach here
+  src/modules/notifications/  In-app notices: list, unread count, mark as read; notify() for other modules
+  src/modules/reports/        FR13 filing reports; reasons are encrypted with lib/crypto.ts
+  src/modules/admin/          Admin-only routes: review queue (reviews.ts), report queue (reports.ts); FR14–FR16 will attach here
   tests/                      AT01–AT07 acceptance tests
 client/src/
   pages/                      Explore, ProjectPage, ProjectEditor, ProjectPreview, ProjectManage, MyProjects, AdminArea, auth pages
@@ -115,7 +117,8 @@ New features go in a new `server/src/modules/<name>/` folder with `routes.ts` an
 - A production server refuses to start unless `NODE_ENV=production` and `APP_URL` (https), `TRUST_PROXY` and `ENCRYPTION_KEYS` are set. Most hosting platforms need `TRUST_PROXY=1`; see `server/.env.example`. The server also refuses to start if `NODE_ENV` is not set at all.
 - Production redirects HTTP to HTTPS and sends HSTS. A state-changing request whose `Origin` differs from `APP_URL` gets 403 `BAD_ORIGIN`; in development, any localhost port is also accepted, because Vite can move ports.
 - Error responses never carry a stack trace or database text.
-- `server/src/lib/crypto.ts` provides AES-256-GCM encryption with versioned keys for private text columns. No column uses it yet. Losing a key makes data encrypted with it unrecoverable, so back keys up outside the repo.
+- Each Admin review decision commits its status change, audit row (with old and new values) and owner notice together, or not at all.
+- `server/src/lib/crypto.ts` provides AES-256-GCM encryption with versioned keys for private text columns, so far report reasons. `server/.env` needs `ENCRYPTION_KEYS`, and everyone sharing a database must use the same key, or the report reasons appear blank. Losing a key makes data encrypted with it unrecoverable, so back keys up outside the repo.
 
 **Scope change to record:** proposal FR01 lists "verify email". Email verification was removed at the team's request, and Google sign-in was added. Record this as a teacher-approved scope change (proposal §7.4).
 
@@ -144,6 +147,8 @@ Run `npm test`. The verbose reporter prints one line per check:
 | FR04 Hide/delete | Hide removes from feed, search and direct view, and is reversible; delete needs the exact title, wipes content and media, and keeps the audit row; owner only; not contactable afterwards | `hideDelete.test.ts` |
 | FR06 Search | Case-insensitive name; all selected tags, whole tags only; name and tags combined; pagination; published only; signed-in only; viewer limits kept | `search.test.ts` |
 | FR07 View | Field-by-field Section 4.2 table for Guest, Uploader (with and without public demo) and Professional; no emails; 404 for unpublished, hidden or deleted; guest cap applies to direct links | `projectView.test.ts` |
+| Notifications | Own notifications only; another user's is a 404, the same as a missing one; an invitation notifies the invitee | `notifications.test.ts` |
+| FR13 Reports and review | Reason stored encrypted; a report changes nothing about its target; non-Admins denied; rate limited; a forced failure during any decision leaves no partial change | `reports.test.ts` |
 | Response audit | Every GET route, and the mutating routes that return data, scanned per viewer for forbidden keys and values (`tests/responseScan.ts`); exact field lists; 404 for anything unpublished; screenshots signed only for allowed tiers; one guest budget shared by feed and direct links, also under parallel requests | `views.test.ts` |
 
 **Visibility (Section 4.2)** is defined in one table, `FIELDS_BY_TIER` in `server/src/modules/discovery/visibility.ts`:

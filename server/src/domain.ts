@@ -59,3 +59,5 @@ export const LIVE_STATUSES: readonly string[] = ['PUBLISHED', 'HIDDEN'];
 export const REVISION_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as const;
 export const MEMBER_STATUSES = ['INVITED', 'ACCEPTED', 'DECLINED'] as const;
 export const MILESTONE_STATUSES = ['PLANNED', 'IN_PROGRESS', 'DONE'] as const;
+export const REPORT_TARGETS = ['PROJECT', 'COMMENT', 'OFFER', 'USER', 'CONVERSATION'] as const;
+export const REPORT_STATUSES = ['OPEN', 'CONFIRMED', 'DISMISSED'] as const;

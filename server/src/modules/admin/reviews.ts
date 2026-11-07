@@ -1,17 +1,17 @@
 import type { AuthUser } from '../../domain.js';
 import { audit } from '../../lib/audit.js';
 import { HttpError } from '../../lib/errors.js';
-import { prisma } from '../../lib/prisma.js';
+import { prisma, TX_OPTIONS } from '../../lib/prisma.js';
+import { notify } from '../notifications/service.js';
 import { signScreenshots } from '../projects/media.js';
 
 /**
- * Minimal review queue for FR02/FR03: approve submissions and revisions, or send them back
- * with a note. The rest of moderation (FR13–FR16) builds on this later.
+ * FR13 review queue: approve submissions and revisions, or send them back with a note. Each decision
+ * commits its status change, audit row and owner notice together, or not at all.
  */
 
-function reviewAudit(action: string, admin: AuthUser, projectId: string, reason?: string) {
-  return audit({ action, actorId: admin.id, targetType: 'Project', targetId: projectId, reason });
-}
+const noSubmission = () => new HttpError(404, 'NOT_FOUND', 'No submission waiting for review.');
+const noRevision = () => new HttpError(404, 'NOT_FOUND', 'No revision waiting for review.');
 
 const content = (p: { title: string; summary: string; problem: string; overview: string; tags: string[]; demoUrl: string | null }) => ({
   title: p.title,
@@ -61,38 +61,50 @@ export async function listReviews() {
 
 export async function approveProject(admin: AuthUser, id: string) {
   const project = await prisma.project.findUnique({ where: { id } });
-  if (!project || project.status !== 'SUBMITTED') throw new HttpError(404, 'NOT_FOUND', 'No submission waiting for review.');
-  await prisma.project.update({
-    where: { id },
-    data: { status: 'PUBLISHED', publishedAt: project.publishedAt ?? new Date(), reviewNote: null },
-  });
-  await reviewAudit('PROJECT_APPROVED', admin, id);
+  if (!project || project.status !== 'SUBMITTED') throw noSubmission();
+  await prisma.$transaction(async (tx) => {
+    const { count } = await tx.project.updateMany({
+      where: { id, status: 'SUBMITTED' },
+      data: { status: 'PUBLISHED', publishedAt: project.publishedAt ?? new Date(), reviewNote: null },
+    });
+    if (count === 0) throw noSubmission();
+    await audit({ action: 'PROJECT_APPROVED', actorId: admin.id, targetType: 'Project', targetId: id, oldValue: 'SUBMITTED', newValue: 'PUBLISHED' }, tx);
+    await notify({ recipientId: project.ownerId, eventType: 'PROJECT_APPROVED', message: `"${project.title}" was approved and is now published.`, targetType: 'Project', targetId: id }, tx);
+  }, TX_OPTIONS);
 }
 
 export async function requestChanges(admin: AuthUser, id: string, note: string) {
   const project = await prisma.project.findUnique({ where: { id } });
-  if (!project || project.status !== 'SUBMITTED') throw new HttpError(404, 'NOT_FOUND', 'No submission waiting for review.');
-  await prisma.project.update({ where: { id }, data: { status: 'CHANGES_REQUESTED', reviewNote: note } });
-  await reviewAudit('PROJECT_CHANGES_REQUESTED', admin, id, note);
+  if (!project || project.status !== 'SUBMITTED') throw noSubmission();
+  await prisma.$transaction(async (tx) => {
+    const { count } = await tx.project.updateMany({ where: { id, status: 'SUBMITTED' }, data: { status: 'CHANGES_REQUESTED', reviewNote: note } });
+    if (count === 0) throw noSubmission();
+    await audit({ action: 'PROJECT_CHANGES_REQUESTED', actorId: admin.id, targetType: 'Project', targetId: id, reason: note, oldValue: 'SUBMITTED', newValue: 'CHANGES_REQUESTED' }, tx);
+    await notify({ recipientId: project.ownerId, eventType: 'PROJECT_CHANGES_REQUESTED', message: `An Admin asked for changes to "${project.title}".`, targetType: 'Project', targetId: id }, tx);
+  }, TX_OPTIONS);
 }
 
 /** Copies the proposed content onto the live project in one transaction. */
 export async function approveRevision(admin: AuthUser, revisionId: string) {
   const revision = await prisma.projectRevision.findUnique({ where: { id: revisionId }, include: { project: true } });
-  if (!revision || revision.status !== 'PENDING' || !['PUBLISHED', 'HIDDEN'].includes(revision.project.status)) {
-    throw new HttpError(404, 'NOT_FOUND', 'No revision waiting for review.');
-  }
-  await prisma.$transaction([
-    prisma.project.update({ where: { id: revision.projectId }, data: content(revision) }),
-    prisma.projectRevision.update({ where: { id: revisionId }, data: { status: 'APPROVED', reviewNote: null } }),
-  ]);
-  await reviewAudit('REVISION_APPROVED', admin, revision.projectId, revisionId);
+  if (!revision || revision.status !== 'PENDING' || !['PUBLISHED', 'HIDDEN'].includes(revision.project.status)) throw noRevision();
+  await prisma.$transaction(async (tx) => {
+    const { count } = await tx.projectRevision.updateMany({ where: { id: revisionId, status: 'PENDING' }, data: { status: 'APPROVED', reviewNote: null } });
+    if (count === 0) throw noRevision();
+    await tx.project.update({ where: { id: revision.projectId }, data: content(revision) });
+    await audit({ action: 'REVISION_APPROVED', actorId: admin.id, targetType: 'Project', targetId: revision.projectId, reason: revisionId, oldValue: 'PENDING', newValue: 'APPROVED' }, tx);
+    await notify({ recipientId: revision.project.ownerId, eventType: 'REVISION_APPROVED', message: `Your changes to "${revision.title}" were approved and are now live.`, targetType: 'Project', targetId: revision.projectId }, tx);
+  }, TX_OPTIONS);
 }
 
 /** The previously approved content simply stays live. */
 export async function rejectRevision(admin: AuthUser, revisionId: string, note: string) {
-  const revision = await prisma.projectRevision.findUnique({ where: { id: revisionId } });
-  if (!revision || revision.status !== 'PENDING') throw new HttpError(404, 'NOT_FOUND', 'No revision waiting for review.');
-  await prisma.projectRevision.update({ where: { id: revisionId }, data: { status: 'REJECTED', reviewNote: note } });
-  await reviewAudit('REVISION_REJECTED', admin, revision.projectId, note);
+  const revision = await prisma.projectRevision.findUnique({ where: { id: revisionId }, include: { project: { select: { ownerId: true, title: true } } } });
+  if (!revision || revision.status !== 'PENDING') throw noRevision();
+  await prisma.$transaction(async (tx) => {
+    const { count } = await tx.projectRevision.updateMany({ where: { id: revisionId, status: 'PENDING' }, data: { status: 'REJECTED', reviewNote: note } });
+    if (count === 0) throw noRevision();
+    await audit({ action: 'REVISION_REJECTED', actorId: admin.id, targetType: 'Project', targetId: revision.projectId, reason: note, oldValue: 'PENDING', newValue: 'REJECTED' }, tx);
+    await notify({ recipientId: revision.project.ownerId, eventType: 'REVISION_REJECTED', message: `Your changes to "${revision.project.title}" were not approved.`, targetType: 'Project', targetId: revision.projectId }, tx);
+  }, TX_OPTIONS);
 }

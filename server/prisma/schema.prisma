@@ -32,6 +32,8 @@ model User {
   emailTokens EmailToken[]
   projects    Project[]
   memberships ProjectMember[]
+  notifications Notification[]
+  reports       Report[]
 }
 
 /// Server-side sessions so suspension/ban invalidates access on the next request (NFR-S3).
@@ -68,9 +70,48 @@ model AuditLog {
   targetType String?
   targetId   String?
   reason     String?
+  /// What changed, for decisions that move a record from one value to another.
+  oldValue   String?
+  newValue   String?
   createdAt  DateTime @default(now())
 
   @@index([action, createdAt])
+}
+
+/// In-app notice for one person (DFD 8.0). Clients poll for these.
+model Notification {
+  id          String   @id @default(cuid())
+  recipientId String
+  recipient   User     @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  eventType   String
+  message     String
+  targetType  String?
+  targetId    String?
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([recipientId, isRead, createdAt])
+}
+
+/// An abuse or copyright report (FR13). A report alone changes nothing about its target.
+model Report {
+  id             String    @id @default(cuid())
+  reporterId     String
+  reporter       User      @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  /// PROJECT | COMMENT | OFFER | USER | CONVERSATION
+  targetType     String
+  targetId       String
+  /// Encrypted with lib/crypto.
+  reason         String
+  /// OPEN | CONFIRMED | DISMISSED
+  status         String    @default("OPEN")
+  decisionNote   String?
+  reviewedById   String?
+  reviewedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([status, createdAt])
+  @@index([reporterId, targetType, targetId])
 }
 
 model Project {
