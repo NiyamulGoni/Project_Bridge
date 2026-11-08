@@ -53,8 +53,10 @@ describe('Filing a report', () => {
   it('accepts every target type', async () => {
     const { user: other } = await agentFor('UPLOADER');
     const project = await createProject(other.id);
-    const { agent } = await agentFor('PROFESSIONAL');
-    const targets = [['PROJECT', project.id], ['USER', other.id], ['COMMENT', 'c1'], ['OFFER', 'o1'], ['CONVERSATION', 'v1']];
+    const { user, agent } = await agentFor('PROFESSIONAL');
+    const comment = await prisma.comment.create({ data: { projectId: project.id, authorId: other.id, body: 'Nice work.' } });
+    const conversation = await prisma.conversation.create({ data: { participants: { create: [{ userId: user.id }, { userId: other.id }] } } });
+    const targets = [['PROJECT', project.id], ['USER', other.id], ['COMMENT', comment.id], ['OFFER', 'o1'], ['CONVERSATION', conversation.id]];
     for (const [type, id] of targets) expect((await agent.post('/api/reports').send(report(type, id))).status).toBe(201);
   });
 
@@ -76,6 +78,9 @@ describe('Filing a report', () => {
     expect((await agent.post('/api/reports').send(report('PROJECT', draft.id))).status).toBe(404);
     expect((await agent.post('/api/reports').send(report('USER', 'no-such-user'))).status).toBe(404);
     expect((await agent.post('/api/reports').send(report('USER', user.id))).status).toBe(400);
+    expect((await agent.post('/api/reports').send(report('COMMENT', 'no-such-comment'))).status).toBe(404);
+    const theirs = await prisma.conversation.create({ data: { participants: { create: [{ userId: owner.id }] } } });
+    expect((await agent.post('/api/reports').send(report('CONVERSATION', theirs.id))).status).toBe(404);
     expect(await prisma.report.count()).toBe(0);
   });
 
@@ -91,10 +96,10 @@ describe('Filing a report', () => {
 
   it('is rate limited per user', async () => {
     const { agent } = await agentFor('UPLOADER');
-    for (let i = 0; i < 10; i++) expect((await agent.post('/api/reports').send(report('COMMENT', `c${i}`))).status).toBe(201);
-    const blocked = await agent.post('/api/reports').send(report('COMMENT', 'one-too-many'));
+    for (let i = 0; i < 10; i++) expect((await agent.post('/api/reports').send(report('OFFER', `o${i}`))).status).toBe(201);
+    const blocked = await agent.post('/api/reports').send(report('OFFER', 'one-too-many'));
     expect(blocked.status).toBe(429);
-    expect((await (await agentFor('UPLOADER')).agent.post('/api/reports').send(report('COMMENT', 'someone-else'))).status).toBe(201);
+    expect((await (await agentFor('UPLOADER')).agent.post('/api/reports').send(report('OFFER', 'someone-else'))).status).toBe(201);
   });
 });
 

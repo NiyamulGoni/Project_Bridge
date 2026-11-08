@@ -28,12 +28,17 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  sessions    Session[]
-  emailTokens EmailToken[]
-  projects    Project[]
-  memberships ProjectMember[]
-  notifications Notification[]
-  reports       Report[]
+  sessions         Session[]
+  emailTokens      EmailToken[]
+  projects         Project[]
+  memberships      ProjectMember[]
+  notifications    Notification[]
+  reports          Report[]
+  likes            ProjectLike[]
+  comments         Comment[]
+  sentRequests     ContactRequest[]          @relation("RequestSender")
+  receivedRequests ContactRequest[]          @relation("RequestRecipient")
+  conversations    ConversationParticipant[]
 }
 
 /// Server-side sessions so suspension/ban invalidates access on the next request (NFR-S3).
@@ -95,20 +100,20 @@ model Notification {
 
 /// An abuse or copyright report (FR13). A report alone changes nothing about its target.
 model Report {
-  id             String    @id @default(cuid())
-  reporterId     String
-  reporter       User      @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  id           String    @id @default(cuid())
+  reporterId   String
+  reporter     User      @relation(fields: [reporterId], references: [id], onDelete: Cascade)
   /// PROJECT | COMMENT | OFFER | USER | CONVERSATION
-  targetType     String
-  targetId       String
+  targetType   String
+  targetId     String
   /// Encrypted with lib/crypto.
-  reason         String
+  reason       String
   /// OPEN | CONFIRMED | DISMISSED
-  status         String    @default("OPEN")
-  decisionNote   String?
-  reviewedById   String?
-  reviewedAt     DateTime?
-  createdAt      DateTime  @default(now())
+  status       String    @default("OPEN")
+  decisionNote String?
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
 
   @@index([status, createdAt])
   @@index([reporterId, targetType, targetId])
@@ -147,11 +152,14 @@ model Project {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  revisions  ProjectRevision[]
-  members    ProjectMember[]
-  progress   ProgressEntry[]
-  milestones Milestone[]
-  media      ProjectMedia[]
+  revisions       ProjectRevision[]
+  members         ProjectMember[]
+  progress        ProgressEntry[]
+  milestones      Milestone[]
+  media           ProjectMedia[]
+  likes           ProjectLike[]
+  comments        Comment[]
+  contactRequests ContactRequest[]
 
   @@index([status, createdAt])
   @@index([status, publishedAt])
@@ -251,4 +259,76 @@ model GuestSession {
   seenProjectIds String[] @default([])
   createdAt      DateTime @default(now())
   lastSeenAt     DateTime @updatedAt
+}
+
+/// One like per user and project (FR08); the primary key makes a double like impossible.
+model ProjectLike {
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([projectId, userId])
+  @@index([userId])
+}
+
+/// Plain-text comment on a published project (FR09). Only the author edits or deletes it.
+model Comment {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId, createdAt])
+}
+
+/// A request to start a private conversation (FR10). Sent about a project (to its owner) or to a user.
+model ContactRequest {
+  id           String    @id @default(cuid())
+  senderId     String
+  sender       User      @relation("RequestSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId  String
+  recipient    User      @relation("RequestRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  projectId    String?
+  project      Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  /// Encrypted with lib/crypto.
+  introduction String
+  /// PENDING | ACCEPTED | DECLINED | WITHDRAWN
+  status       String    @default("PENDING")
+  /// sender:recipient:project while PENDING, null afterwards, so only one pending request can exist.
+  pendingKey   String?   @unique
+  respondedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  conversation Conversation?
+
+  @@index([recipientId, status])
+  @@index([senderId, status])
+}
+
+/// A private conversation, created once when a contact request is accepted.
+model Conversation {
+  id               String          @id @default(cuid())
+  /// Unique, so one request can never open two conversations.
+  contactRequestId String?         @unique
+  contactRequest   ContactRequest? @relation(fields: [contactRequestId], references: [id], onDelete: SetNull)
+  createdAt        DateTime        @default(now())
+
+  participants ConversationParticipant[]
+}
+
+model ConversationParticipant {
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt       DateTime     @default(now())
+
+  @@id([conversationId, userId])
+  @@index([userId])
 }

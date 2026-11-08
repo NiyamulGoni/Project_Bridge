@@ -8,7 +8,8 @@ import { param } from '../../lib/params.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { signScreenshots } from '../projects/media.js';
 import { admitGuestToProject, getGuestSession, guestCardLimit, guestFeedPage, guestLimitReached } from './guestLimit.js';
-import { ELIGIBLE, NEWEST_FIRST, showsDemo, toCard, toDetail, viewerTier } from './visibility.js';
+import { engagementFor } from '../engagement/service.js';
+import { cardInclude, ELIGIBLE, ENGAGEMENT_COUNTS, FIELDS_BY_TIER, NEWEST_FIRST, showsDemo, toCard, toDetail, viewerTier } from './visibility.js';
 
 /** FR05–FR07: the public, role-aware side of projects. */
 export const discoveryRouter = Router();
@@ -37,7 +38,7 @@ discoveryRouter.get('/feed', async (req, res) => {
   const rows = await prisma.project.findMany({
     where: ELIGIBLE,
     orderBy: NEWEST_FIRST,
-    include: { owner: { select: { name: true } } },
+    include: cardInclude(tier),
     skip: offset,
     take: pageSize + 1,
   });
@@ -76,7 +77,7 @@ discoveryRouter.get('/search', requireAuth, async (req, res) => {
     prisma.project.findMany({
       where,
       orderBy: NEWEST_FIRST,
-      include: { owner: { select: { name: true } } },
+      include: cardInclude(tier),
       skip: (page - 1) * pageSize,
       take: pageSize + 1,
     }),
@@ -132,10 +133,14 @@ discoveryRouter.get('/:id', async (req, res) => {
       milestones: true,
       progress: { orderBy: { createdAt: 'desc' }, take: 20 },
       media: true,
+      ...(FIELDS_BY_TIER[tier].engagement ? ENGAGEMENT_COUNTS : {}),
     },
   });
   if (!project) throw new HttpError(404, 'NOT_FOUND', 'Project not found.');
 
-  const screenshots = showsDemo(project, tier) ? await signScreenshots(project.media) : [];
-  res.json({ tier, project: toDetail(project, tier, screenshots) });
+  const [screenshots, engagement] = await Promise.all([
+    showsDemo(project, tier) ? signScreenshots(project.media) : [],
+    FIELDS_BY_TIER[tier].engagement ? engagementFor(req.user!, project.id) : undefined,
+  ]);
+  res.json({ tier, project: toDetail(project, tier, screenshots, engagement) });
 });

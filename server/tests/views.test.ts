@@ -12,6 +12,8 @@ import { hashToken, randomToken } from '../src/lib/tokens.js';
 import { SESSION_COOKIE } from '../src/middleware/session.js';
 import { accountsRouter } from '../src/modules/accounts/routes.js';
 import { adminRouter } from '../src/modules/admin/routes.js';
+import { engagementRouter } from '../src/modules/engagement/routes.js';
+import { messagingRouter } from '../src/modules/messaging/routes.js';
 import { notificationsRouter } from '../src/modules/notifications/routes.js';
 import { reportsRouter } from '../src/modules/reports/routes.js';
 import { encrypt } from '../src/lib/crypto.js';
@@ -238,7 +240,7 @@ describe('responseScan', () => {
 
 // ---------------------------------------------------------------- Every GET route, as every viewer
 
-type RouterName = 'app' | 'accounts' | 'projects' | 'discovery' | 'notifications' | 'reports' | 'admin';
+type RouterName = 'app' | 'accounts' | 'projects' | 'discovery' | 'engagement' | 'messaging' | 'notifications' | 'reports' | 'admin';
 
 interface GetRoute {
   router: RouterName;
@@ -268,6 +270,7 @@ const GET_ROUTES: GetRoute[] = [
   { router: 'discovery', path: '/search', urls: () => ['/api/projects/search', '/api/projects/search?q=monitor&tags=iot'], statuses: signedIn, isPublic: true },
   { router: 'discovery', path: '/tags', urls: () => ['/api/projects/tags'], statuses: signedIn, isPublic: true },
   { router: 'discovery', path: '/:id', urls: () => [`/api/projects/${live.id}`, `/api/projects/${liveDemo.id}`], statuses: everyone(200), isPublic: true },
+  { router: 'messaging', path: '/requests', urls: () => ['/api/messaging/requests', '/api/messaging/requests?box=outgoing'], statuses: signedIn },
   { router: 'notifications', path: '/', urls: () => ['/api/notifications'], statuses: signedIn },
   { router: 'notifications', path: '/unread-count', urls: () => ['/api/notifications/unread-count'], statuses: signedIn },
   { router: 'admin', path: '/ping', urls: () => ['/api/admin/ping'], statuses: adminOnly },
@@ -311,6 +314,8 @@ const ROUTERS: [RouterName, Router][] = [
   ['accounts', accountsRouter],
   ['projects', projectsRouter],
   ['discovery', discoveryRouter],
+  ['engagement', engagementRouter],
+  ['messaging', messagingRouter],
   ['notifications', notificationsRouter],
   ['reports', reportsRouter],
   ['admin', adminRouter],
@@ -344,7 +349,7 @@ describe('Route inventory', () => {
       .map((layer) => ROUTERS.find(([, router]) => router === layer.handle)?.[0] ?? layer.name);
     expect(mounted).toEqual([
       'requireHttps', 'helmetMiddleware', 'checkOrigin', 'jsonParser', 'cookieParser', 'loadSession',
-      'accounts', 'projects', 'discovery', 'notifications', 'reports', 'admin',
+      'accounts', 'projects', 'discovery', 'engagement', 'messaging', 'notifications', 'reports', 'admin',
       '<anonymous>', 'errorHandler',
     ]);
   });
@@ -360,9 +365,11 @@ describe('Route inventory', () => {
 
 const CARD = ['id', 'isSynthetic', 'stage', 'summary', 'tags', 'thumbnailUrl', 'title'];
 const UPLOADER_CARD = [...CARD, 'overview'];
-const FULL_CARD = [...UPLOADER_CARD, 'owner'];
+const FULL_CARD = [...UPLOADER_CARD, 'owner', 'likeCount', 'commentCount'];
 const DEMO = ['demoUrl', 'screenshots'];
-const FULL_DETAIL = [...FULL_CARD, ...DEMO, 'milestones', 'problem', 'progress', 'team'];
+const FULL_DETAIL = [...FULL_CARD, ...DEMO, 'comments', 'likedByMe', 'milestones', 'problem', 'progress', 'team'];
+/** The team's preview shows the content a Professional will see, without likes and comments. */
+const PREVIEW_DETAIL = FULL_DETAIL.filter((f) => !['likeCount', 'commentCount', 'comments', 'likedByMe'].includes(f));
 
 describe('Exact field lists', () => {
   const cardOf = (res: Res, id: string) => {
@@ -518,7 +525,7 @@ describe('Exact field lists', () => {
     it.each(['owner', 'editor'] as const)('preview for the %s: the full view of the pending revision, no one uninvolved', async (viewer) => {
       const { body } = await agents[viewer].get(`/api/projects/${live.id}/preview`);
       expect(fields(body)).toEqual(['project', 'showsPendingRevision', 'status']);
-      expect(fields(body.project)).toEqual(sorted(FULL_DETAIL));
+      expect(fields(body.project)).toEqual(sorted(PREVIEW_DETAIL));
       expect(body.project.overview).toContain(REVISION_MARKER);
       expectCleanResponse(body, { values: [...secrets, INVITEE_NAME, DECLINER_NAME] });
     });

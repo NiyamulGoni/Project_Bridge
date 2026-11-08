@@ -38,6 +38,26 @@ export const reportLimiter = rateLimit({
   message: message('Too many reports. Please wait a few minutes and try again.'),
 });
 
+/** Per signed-in user, against comment spam. */
+export const commentLimiter = rateLimit({
+  windowMs: WINDOW_MS,
+  limit: config.commentRateLimit,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user!.id,
+  message: message('Too many comments. Please wait a few minutes and try again.'),
+});
+
+/** Per signed-in user, so one account cannot flood others with requests. */
+export const contactLimiter = rateLimit({
+  windowMs: WINDOW_MS,
+  limit: config.contactRateLimit,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user!.id,
+  message: message('Too many contact requests. Please wait a few minutes and try again.'),
+});
+
 /** Registration, resend and password-reset requests, which trigger emails. */
 export const authEmailLimiter = rateLimit({
   windowMs: WINDOW_MS,

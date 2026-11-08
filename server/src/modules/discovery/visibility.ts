@@ -24,6 +24,8 @@ interface TierRules {
   roadmap: boolean;
   /** Owner and accepted team members, by name only. */
   team: boolean;
+  /** Like and comment counts, and in the detail view the comments themselves (FR08, FR09). */
+  engagement: boolean;
 }
 
 /**
@@ -33,9 +35,9 @@ interface TierRules {
  * No tier ever receives contact details, drafts or unpublished material.
  */
 export const FIELDS_BY_TIER: Record<ViewerTier, TierRules> = {
-  GUEST: { summaryLimit: GUEST_SUMMARY_LIMIT, overviewLimit: 0, problem: false, demo: 'never', roadmap: false, team: false },
-  UPLOADER: { summaryLimit: GUEST_SUMMARY_LIMIT, overviewLimit: UPLOADER_OVERVIEW_LIMIT, problem: false, demo: 'ifPublic', roadmap: false, team: false },
-  PROFESSIONAL: { summaryLimit: null, overviewLimit: null, problem: true, demo: 'always', roadmap: true, team: true },
+  GUEST: { summaryLimit: GUEST_SUMMARY_LIMIT, overviewLimit: 0, problem: false, demo: 'never', roadmap: false, team: false, engagement: false },
+  UPLOADER: { summaryLimit: GUEST_SUMMARY_LIMIT, overviewLimit: UPLOADER_OVERVIEW_LIMIT, problem: false, demo: 'ifPublic', roadmap: false, team: false, engagement: false },
+  PROFESSIONAL: { summaryLimit: null, overviewLimit: null, problem: true, demo: 'always', roadmap: true, team: true, engagement: true },
 };
 
 export function viewerTier(user: AuthUser | undefined): ViewerTier {
@@ -69,14 +71,25 @@ export interface ProjectCard {
   summary: string;
   overview?: string;
   owner?: { name: string };
+  likeCount?: number;
+  commentCount?: number;
   isSynthetic: boolean;
+}
+
+/** Counted inside the card query itself, so a page of cards costs one query, not one per card. */
+export const ENGAGEMENT_COUNTS = { _count: { select: { likes: true, comments: true } } } as const;
+type Counts = { _count?: { likes: number; comments: number } };
+
+/** What to load with each card for this tier: always the owner's name, counts only where shown. */
+export function cardInclude(tier: ViewerTier) {
+  return { owner: { select: { name: true } }, ...(FIELDS_BY_TIER[tier].engagement ? ENGAGEMENT_COUNTS : {}) };
 }
 
 /**
  * Builds the card for one viewer. Restricted fields are left out of the response
  * instead of being hidden in the browser (NFR-S2).
  */
-export function toCard(project: Project & { owner: Pick<User, 'name'> }, tier: ViewerTier): ProjectCard {
+export function toCard(project: Project & { owner: Pick<User, 'name'> } & Counts, tier: ViewerTier): ProjectCard {
   const rules = FIELDS_BY_TIER[tier];
   const card: ProjectCard = {
     id: project.id,
@@ -90,6 +103,10 @@ export function toCard(project: Project & { owner: Pick<User, 'name'> }, tier: V
   const overview = limitText(project.overview, rules.overviewLimit);
   if (overview !== undefined) card.overview = overview;
   if (rules.team) card.owner = { name: project.owner.name };
+  if (rules.engagement && project._count) {
+    card.likeCount = project._count.likes;
+    card.commentCount = project._count.comments;
+  }
   return card;
 }
 
@@ -105,10 +122,12 @@ export interface ProjectDetail extends ProjectCard {
   team?: TeamMember[];
   milestones?: Array<{ id: string; title: string; status: string; dueDate: string | null }>;
   progress?: Array<{ id: string; body: string; createdAt: string }>;
+  likedByMe?: boolean;
+  comments?: Array<{ id: string; body: string; author: { id: string; name: string }; mine: boolean; edited: boolean; createdAt: string }>;
   // Contribution/hiring information (Section 4.2, Professional) attaches here once it exists.
 }
 
-export type DetailSource = Project & {
+export type DetailSource = Project & Counts & {
   owner: Pick<User, 'name'>;
   members: Array<{ role: string; status: string; user: Pick<User, 'name'> }>;
   milestones: Milestone[];
@@ -123,6 +142,7 @@ export function toDetail(
   project: DetailSource,
   tier: ViewerTier,
   screenshots: Array<{ id: string; url: string }> = [],
+  engagement?: Pick<ProjectDetail, 'likedByMe' | 'comments'>,
 ): ProjectDetail {
   const rules = FIELDS_BY_TIER[tier];
   const detail: ProjectDetail = toCard(project, tier);
@@ -144,6 +164,10 @@ export function toDetail(
       { name: project.owner.name, role: 'OWNER' },
       ...project.members.filter((m) => m.status === 'ACCEPTED').map((m) => ({ name: m.user.name, role: 'EDITOR' as const })),
     ];
+  }
+  if (rules.engagement && engagement) {
+    detail.likedByMe = engagement.likedByMe;
+    detail.comments = engagement.comments;
   }
   return detail;
 }

@@ -8,6 +8,8 @@ import { loadSession } from './middleware/session.js';
 import { accountsRouter } from './modules/accounts/routes.js';
 import { adminRouter } from './modules/admin/routes.js';
 import { discoveryRouter } from './modules/discovery/routes.js';
+import { engagementRouter } from './modules/engagement/routes.js';
+import { messagingRouter } from './modules/messaging/routes.js';
 import { notificationsRouter } from './modules/notifications/routes.js';
 import { projectsRouter } from './modules/projects/routes.js';
 import { reportsRouter } from './modules/reports/routes.js';
@@ -34,6 +36,8 @@ export function createApp() {
   // Owner/editor routes first, so /mine and /invites are not read as a project id.
   app.use('/api/projects', projectsRouter);
   app.use('/api/projects', discoveryRouter);
+  app.use('/api/projects', engagementRouter);
+  app.use('/api/messaging', messagingRouter);
   app.use('/api/notifications', notificationsRouter);
   app.use('/api/reports', reportsRouter);
   app.use('/api/admin', adminRouter);

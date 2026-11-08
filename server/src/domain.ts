@@ -61,3 +61,4 @@ export const MEMBER_STATUSES = ['INVITED', 'ACCEPTED', 'DECLINED'] as const;
 export const MILESTONE_STATUSES = ['PLANNED', 'IN_PROGRESS', 'DONE'] as const;
 export const REPORT_TARGETS = ['PROJECT', 'COMMENT', 'OFFER', 'USER', 'CONVERSATION'] as const;
 export const REPORT_STATUSES = ['OPEN', 'CONFIRMED', 'DISMISSED'] as const;
+export const CONTACT_REQUEST_STATUSES = ['PENDING', 'ACCEPTED', 'DECLINED', 'WITHDRAWN'] as const;
