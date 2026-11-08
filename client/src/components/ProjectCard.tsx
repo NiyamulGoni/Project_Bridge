@@ -62,6 +62,12 @@ export function ProjectCard({ project }: { project: Card }) {
           <div className="project-footer">
             <Avatar name={project.owner.name} size={22} />
             <span>By {project.owner.name}</span>
+            {project.likeCount !== undefined && (
+              <span className="engagement-counts" aria-label={`${project.likeCount} likes, ${project.commentCount ?? 0} comments`}>
+                <span aria-hidden="true">♥ {project.likeCount}</span>
+                <span aria-hidden="true">💬 {project.commentCount ?? 0}</span>
+              </span>
+            )}
           </div>
         )}
       </div>

@@ -20,7 +20,19 @@ export interface ProjectCard {
   summary: string;
   overview?: string;
   owner?: { name: string };
+  /** Professional tier only (FR08, FR09). */
+  likeCount?: number;
+  commentCount?: number;
   isSynthetic: boolean;
+}
+
+export interface ProjectComment {
+  id: string;
+  body: string;
+  author: { id: string; name: string };
+  mine: boolean;
+  edited: boolean;
+  createdAt: string;
 }
 
 export type ViewerTier = 'GUEST' | 'UPLOADER' | 'PROFESSIONAL';
@@ -70,6 +82,9 @@ export interface ProjectDetail extends ProjectCard {
   team?: Array<{ name: string; role: 'OWNER' | 'EDITOR' }>;
   milestones?: Array<{ id: string; title: string; status: MilestoneStatus; dueDate: string | null }>;
   progress?: Array<{ id: string; body: string; createdAt: string }>;
+  /** Professional tier only. */
+  likedByMe?: boolean;
+  comments?: ProjectComment[];
 }
 
 export interface ProjectContent {
@@ -149,6 +164,41 @@ export interface ReviewQueue {
     current: ProjectContent;
     proposed: ProjectContent;
   }>;
+}
+
+export interface AppNotification {
+  id: string;
+  eventType: string;
+  message: string;
+  targetType: string | null;
+  targetId: string | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface ContactRequest {
+  id: string;
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'WITHDRAWN';
+  /** Null if it cannot be decrypted. */
+  introduction: string | null;
+  from: { id: string; name: string } | null;
+  to: { id: string; name: string } | null;
+  project: { id: string; title: string } | null;
+  conversationId: string | null;
+  createdAt: string;
+  respondedAt: string | null;
+}
+
+export interface AdminReport {
+  id: string;
+  targetType: 'PROJECT' | 'COMMENT' | 'OFFER' | 'USER' | 'CONVERSATION';
+  targetId: string;
+  reason: string | null;
+  status: 'OPEN' | 'CONFIRMED' | 'DISMISSED';
+  decisionNote: string | null;
+  reporter: { name: string };
+  createdAt: string;
+  reviewedAt: string | null;
 }
 
 export class ApiError extends Error {

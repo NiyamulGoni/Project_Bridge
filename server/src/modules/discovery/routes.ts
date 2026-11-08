@@ -8,7 +8,7 @@ import { param } from '../../lib/params.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { signScreenshots } from '../projects/media.js';
 import { admitGuestToProject, getGuestSession, guestCardLimit, guestFeedPage, guestLimitReached } from './guestLimit.js';
-import { engagementFor } from '../engagement/service.js';
+import { COMMENTS_SHOWN, toCommentView, type CommentSource } from '../engagement/service.js';
 import { cardInclude, ELIGIBLE, ENGAGEMENT_COUNTS, FIELDS_BY_TIER, NEWEST_FIRST, showsDemo, toCard, toDetail, viewerTier } from './visibility.js';
 
 /** FR05–FR07: the public, role-aware side of projects. */
@@ -133,14 +133,24 @@ discoveryRouter.get('/:id', async (req, res) => {
       milestones: true,
       progress: { orderBy: { createdAt: 'desc' }, take: 20 },
       media: true,
-      ...(FIELDS_BY_TIER[tier].engagement ? ENGAGEMENT_COUNTS : {}),
+      // Likes and comments come with the project, not as extra round trips to the database.
+      ...(FIELDS_BY_TIER[tier].engagement
+        ? {
+            ...ENGAGEMENT_COUNTS,
+            likes: { where: { userId: req.user!.id }, select: { userId: true } },
+            comments: { orderBy: [{ createdAt: 'desc' as const }, { id: 'desc' as const }], take: COMMENTS_SHOWN, include: { author: { select: { id: true, name: true } } } },
+          }
+        : {}),
     },
   });
   if (!project) throw new HttpError(404, 'NOT_FOUND', 'Project not found.');
 
-  const [screenshots, engagement] = await Promise.all([
-    showsDemo(project, tier) ? signScreenshots(project.media) : [],
-    FIELDS_BY_TIER[tier].engagement ? engagementFor(req.user!, project.id) : undefined,
-  ]);
+  const screenshots = showsDemo(project, tier) ? await signScreenshots(project.media) : [];
+  // The include above only adds these for the engagement tier, which TypeScript cannot follow.
+  const loaded = project as unknown as { likes?: Array<{ userId: string }>; comments?: CommentSource[] };
+  const engagement =
+    loaded.comments && loaded.likes
+      ? { likedByMe: loaded.likes.length > 0, comments: loaded.comments.map((c) => toCommentView(c, req.user!.id)) }
+      : undefined;
   res.json({ tier, project: toDetail(project, tier, screenshots, engagement) });
 });

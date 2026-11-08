@@ -1,6 +1,9 @@
 import { Link } from 'react-router';
 import { MILESTONE_LABELS, STAGE_LABELS, type ProjectDetail, type ViewerTier } from '../api';
 import { Avatar } from './Avatar';
+import { ContactButton } from './ContactButton';
+import { Engagement } from './Engagement';
+import { ReportButton } from './ReportButton';
 
 function Paragraphs({ text }: { text: string }) {
   return (
@@ -46,11 +49,15 @@ export function ProjectView({ project, tier }: { project: ProjectDetail; tier: V
             ))}
           </ul>
         )}
-        {project.demoUrl && (
-          <a className="btn btn-primary" href={project.demoUrl} target="_blank" rel="noopener noreferrer" style={{ alignSelf: 'flex-start' }}>
-            Open demo ↗
-          </a>
-        )}
+        <div className="row">
+          {project.demoUrl && (
+            <a className="btn btn-primary" href={project.demoUrl} target="_blank" rel="noopener noreferrer">
+              Open demo ↗
+            </a>
+          )}
+          {tier !== 'GUEST' && <ContactButton projectId={project.id} name="the team" label="Contact the team" />}
+          {tier !== 'GUEST' && <ReportButton targetType="PROJECT" targetId={project.id} label="Report project" />}
+        </div>
       </header>
 
       {tier === 'GUEST' ? (
@@ -77,6 +84,8 @@ export function ProjectView({ project, tier }: { project: ProjectDetail; tier: V
           )}
         </>
       )}
+
+      {project.comments && <Engagement project={project} />}
 
       {project.screenshots && project.screenshots.length > 0 && (
         <section className="card card-pad stack" aria-labelledby="shots-title">

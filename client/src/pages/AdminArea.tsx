@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { api, ApiError } from '../api';
 import { useAuth } from '../auth/AuthContext';
+import { ReportQueue } from '../components/ReportQueue';
 import { ReviewQueue } from '../components/ReviewQueue';
 
 const UPCOMING = [
@@ -71,6 +72,8 @@ export function AdminArea() {
       )}
 
       {result?.ok && <ReviewQueue />}
+
+      {result?.ok && <ReportQueue />}
 
       {result?.ok && (
         <section className="stack" aria-labelledby="upcoming-title">

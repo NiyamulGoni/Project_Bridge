@@ -8,11 +8,13 @@ import { ForgotPassword } from './pages/ForgotPassword';
 import { Login } from './pages/Login';
 import { MyProjects } from './pages/MyProjects';
 import { NotFound } from './pages/NotFound';
+import { Notifications } from './pages/Notifications';
 import { ProjectEditor } from './pages/ProjectEditor';
 import { ProjectManage } from './pages/ProjectManage';
 import { ProjectPage } from './pages/ProjectPage';
 import { ProjectPreview } from './pages/ProjectPreview';
 import { Register } from './pages/Register';
+import { Requests } from './pages/Requests';
 import { ResetPassword } from './pages/ResetPassword';
 
 export function App() {
@@ -34,6 +36,22 @@ export function App() {
             element={
               <RequireAuth>
                 <Account />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/notifications"
+            element={
+              <RequireAuth>
+                <Notifications />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/requests"
+            element={
+              <RequireAuth>
+                <Requests />
               </RequireAuth>
             }
           />

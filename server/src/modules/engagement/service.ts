@@ -78,17 +78,3 @@ export async function deleteComment(user: AuthUser, projectId: string, commentId
   await ownComment(user, projectId, commentId);
   await prisma.comment.delete({ where: { id: commentId } });
 }
-
-/** What the Professional project view adds: whether this viewer liked it, and the latest comments. */
-export async function engagementFor(user: AuthUser, projectId: string) {
-  const [liked, comments] = await Promise.all([
-    prisma.projectLike.findUnique({ where: { projectId_userId: { projectId, userId: user.id } }, select: { userId: true } }),
-    prisma.comment.findMany({
-      where: { projectId },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: COMMENTS_SHOWN,
-      include: { author: { select: { id: true, name: true } } },
-    }),
-  ]);
-  return { likedByMe: liked !== null, comments: comments.map((c) => toCommentView(c, user.id)) };
-}
