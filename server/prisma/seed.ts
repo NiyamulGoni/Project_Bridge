@@ -9,10 +9,10 @@ const prisma = new PrismaClient();
 export const DEMO_PASSWORD = 'Password123!';
 
 const accounts = [
-  { email: 'admin@projectbridge.test', name: 'Ayesha Admin', role: 'ADMIN', status: 'ACTIVE' },
-  { email: 'pro@projectbridge.test', name: 'Farhan Professional', role: 'PROFESSIONAL', status: 'ACTIVE' },
-  { email: 'uploader@projectbridge.test', name: 'Nusrat Uploader', role: 'UPLOADER', status: 'ACTIVE' },
-  { email: 'banned@projectbridge.test', name: 'Bashir Banned', role: 'PROFESSIONAL', status: 'BANNED' },
+  { email: 'admin@projectbridge.test', name: 'Sourav', role: 'ADMIN', status: 'ACTIVE' },
+  { email: 'pro@projectbridge.test', name: 'Shehzad', role: 'PROFESSIONAL', status: 'ACTIVE' },
+  { email: 'uploader@projectbridge.test', name: 'Rakibul', role: 'UPLOADER', status: 'ACTIVE' },
+  { email: 'banned@projectbridge.test', name: 'Pushy', role: 'PROFESSIONAL', status: 'BANNED' },
 ];
 
 const ideas: Array<[string, string, string]> = [
