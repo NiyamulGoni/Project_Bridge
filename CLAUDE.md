@@ -12,8 +12,7 @@ This is a semester project. Aim for correct, secure and readable code with focus
 - `client/`: React 19, Vite, React Router. Pages in `client/src/pages/`, shared pieces in `client/src/components/`, API types and the `api()` helper in `client/src/api.ts`.
 
 ```bash
-npm install
-npx prisma generate --schema server/prisma/schema.prisma
+npm install      # also regenerates the Prisma client; so do `npm run dev` and `npm test`
 npm run dev      # API on :4000, web on http://localhost:5173 (5174 if 5173 is busy)
 npm test         # whole suite, uses the projectbridge_test schema
 cd server && npx vitest run tests/<file>.test.ts   # one file
@@ -41,6 +40,7 @@ Demo accounts (password `Password123!`): `admin@projectbridge.test` (Sourav, Adm
 - One shared Supabase database for the whole team. Real data lives in the `public` schema; tests use the separate `projectbridge_test` schema, rebuilt with `prisma db push` before each run.
 - Do not change the shared database without asking the team lead first. That includes `prisma migrate deploy`, `prisma migrate dev` and `npm run setup`.
 - To add a migration: edit `server/prisma/schema.prisma`, create `server/prisma/migrations/<timestamp>_<name>/migration.sql` with `npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script` (run in `server/`, it only reads the database), then append `ALTER TABLE "<Table>" ENABLE ROW LEVEL SECURITY;` for each new table. Tests do not use migrations, so never rely on raw SQL constraints.
+- `DATABASE_URL` must use the session pooler (port 5432) with a small `connection_limit` (3). The transaction pooler (port 6543) took 20 seconds or more to connect and often failed. Dropped connections can leave sessions stuck "idle in transaction" on the database, which use up the pooler's slots and make every request queue; check `pg_stat_activity` when the app turns slow.
 - The connection to Supabase is often slow or drops for minutes. `server/src/lib/prisma.ts` raises the timeouts and retries plain reads. In tests, errors such as `Can't reach database server`, P1001, P1008, P1017, P2024, P2028 or "Hook timed out" are almost always the connection, not the code. Check with a `SELECT 1` before debugging, and rerun just the affected file. Running the suite with fewer connections helps: set `connection_limit=5` on `TEST_DATABASE_URL` for that run.
 
 ## Test-suite tripwires

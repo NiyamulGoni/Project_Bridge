@@ -101,8 +101,8 @@ export function Offers() {
                 </option>
               ))}
             </SelectField>
-            <div className="row">
-              <FormField label="Compensation" value={form.compensation} onChange={set('compensation')} error={fields.compensation} hint="For example 25000, or 500 per hour" required />
+            <div className="field-row">
+              <FormField label="Compensation" value={form.compensation} onChange={set('compensation')} error={fields.compensation} placeholder="For example 25000, or 500 per hour" required />
               <FormField label="Currency" value={form.currency} onChange={set('currency')} error={fields.currency} maxLength={3} required />
             </div>
             <TextAreaField label="How to apply" value={form.applicationRoute} onChange={set('applicationRoute')} error={fields.applicationRoute} maxLength={500} rows={3} required />

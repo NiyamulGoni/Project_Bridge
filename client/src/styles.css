@@ -1475,3 +1475,173 @@ fieldset {
   flex-direction: column;
   gap: 6px;
 }
+
+/* ---------- Fixes found by clicking through the new screens ---------- */
+a.chat-item,
+a.chat-item:hover {
+  text-decoration: none;
+  font-weight: 400;
+}
+/* Two inputs side by side whose labels and boxes line up. */
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 140px;
+  gap: 12px;
+  align-items: start;
+}
+/* With Requests, Messages and Offers the links no longer fit beside the actions on a phone. */
+@media (max-width: 640px) {
+  .navbar-inner {
+    height: auto;
+    flex-wrap: wrap;
+    padding-block: 8px;
+    row-gap: 4px;
+  }
+  .nav-links {
+    order: 3;
+    flex-basis: 100%;
+    overflow-x: auto;
+  }
+  .nav-links a {
+    white-space: nowrap;
+  }
+  .nav-actions {
+    margin-left: auto;
+  }
+  .nav-new {
+    display: none;
+  }
+  .chat-form {
+    flex-wrap: wrap;
+  }
+}
+
+/* ---------- Explore: filter sidebar (FR06) ---------- */
+.explore-layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.explore-side {
+  position: sticky;
+  top: 76px;
+  max-height: calc(100vh - 92px);
+  overflow-y: auto;
+}
+.filters {
+  display: flex;
+  flex-direction: column;
+}
+.filters-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.filters-head h2 {
+  font-size: 1rem;
+  margin: 0;
+}
+.filters-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 14px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+.filters-group:last-child {
+  border-bottom: 0;
+}
+.filters-group p {
+  margin: 0;
+}
+.filters-label {
+  padding: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.filters-tags {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.filters-tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.92rem;
+}
+.filters-tag:hover {
+  background: var(--surface-muted);
+}
+.filters-tag.on {
+  color: var(--accent);
+  font-weight: 600;
+}
+.filters-tag input {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+.filters-tag-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filters-tag-count {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* On wide screens the panel is always open, so its toggle is hidden. */
+.filters-toggle > summary {
+  display: none;
+}
+@media (max-width: 860px) {
+  .explore-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .explore-side {
+    position: static;
+    max-height: none;
+  }
+  .filters-toggle > summary {
+    display: inline-flex;
+    list-style: none;
+    margin-bottom: 10px;
+  }
+  .filters-toggle > summary::-webkit-details-marker {
+    display: none;
+  }
+}
+
+/* A legend otherwise sits on the fieldset's top edge, ignoring its padding. */
+fieldset.filters-group > legend {
+  float: left;
+  width: 100%;
+}
+fieldset.filters-group > legend + * {
+  clear: both;
+}
+/* On a wide screen the panel shows even if it was closed at phone width. */
+@media (min-width: 861px) {
+  .filters-toggle:not([open]) > .filters {
+    display: flex;
+  }
+}
