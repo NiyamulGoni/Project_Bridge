@@ -12,8 +12,7 @@ export const REASON_CONTEXT = 'Report.reason';
 const nothingToReport = () => new HttpError(404, 'NOT_FOUND', 'There is nothing to report here.');
 
 /**
- * Projects, users, comments and conversations are checked here. Offers do not exist yet, so the step
- * that adds them must add its check too.
+ * Every target is checked: you can only report something you are able to see.
  */
 async function assertReportable(user: AuthUser, targetType: string, targetId: string): Promise<void> {
   if (targetType === 'PROJECT') {
@@ -29,6 +28,11 @@ async function assertReportable(user: AuthUser, targetType: string, targetId: st
     const comment = await prisma.comment.findFirst({ where: { id: targetId, project: { status: 'PUBLISHED' } }, select: { authorId: true } });
     if (!comment) throw nothingToReport();
     if (comment.authorId === user.id) throw new HttpError(400, 'VALIDATION_ERROR', 'You cannot report your own comment.');
+  }
+  if (targetType === 'OFFER') {
+    const offer = await prisma.paidOffer.findFirst({ where: { id: targetId, reviewStatus: 'APPROVED', project: { status: 'PUBLISHED' } }, select: { authorId: true } });
+    if (!offer || user.role !== 'PROFESSIONAL') throw nothingToReport();
+    if (offer.authorId === user.id) throw new HttpError(400, 'VALIDATION_ERROR', 'You cannot report your own offer.');
   }
   // Only someone in the conversation can know it exists, so only they can report it.
   if (targetType === 'CONVERSATION') {

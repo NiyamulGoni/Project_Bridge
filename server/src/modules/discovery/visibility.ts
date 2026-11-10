@@ -1,6 +1,9 @@
 import type { Milestone, Prisma, ProgressEntry, Project, User } from '@prisma/client';
 import type { AuthUser } from '../../domain.js';
 
+/** A paid offer as the Professional tier sees it; built in modules/offers. */
+export type OfferView = { id: string; title: string; skills: string[]; type: string; compensation: string; currency: string; applicationRoute: string; status: string; createdAt: string; paymentNotice: string };
+
 /** I2: what each viewer may see (proposal Section 4.2). */
 export type ViewerTier = 'GUEST' | 'UPLOADER' | 'PROFESSIONAL';
 
@@ -26,6 +29,8 @@ interface TierRules {
   team: boolean;
   /** Like and comment counts, and in the detail view the comments themselves (FR08, FR09). */
   engagement: boolean;
+  /** Approved, open paid offers (FR11). */
+  offers: boolean;
 }
 
 /**
@@ -35,9 +40,9 @@ interface TierRules {
  * No tier ever receives contact details, drafts or unpublished material.
  */
 export const FIELDS_BY_TIER: Record<ViewerTier, TierRules> = {
-  GUEST: { summaryLimit: GUEST_SUMMARY_LIMIT, overviewLimit: 0, problem: false, demo: 'never', roadmap: false, team: false, engagement: false },
-  UPLOADER: { summaryLimit: GUEST_SUMMARY_LIMIT, overviewLimit: UPLOADER_OVERVIEW_LIMIT, problem: false, demo: 'ifPublic', roadmap: false, team: false, engagement: false },
-  PROFESSIONAL: { summaryLimit: null, overviewLimit: null, problem: true, demo: 'always', roadmap: true, team: true, engagement: true },
+  GUEST: { summaryLimit: GUEST_SUMMARY_LIMIT, overviewLimit: 0, problem: false, demo: 'never', roadmap: false, team: false, engagement: false, offers: false },
+  UPLOADER: { summaryLimit: GUEST_SUMMARY_LIMIT, overviewLimit: UPLOADER_OVERVIEW_LIMIT, problem: false, demo: 'ifPublic', roadmap: false, team: false, engagement: false, offers: false },
+  PROFESSIONAL: { summaryLimit: null, overviewLimit: null, problem: true, demo: 'always', roadmap: true, team: true, engagement: true, offers: true },
 };
 
 export function viewerTier(user: AuthUser | undefined): ViewerTier {
@@ -124,6 +129,7 @@ export interface ProjectDetail extends ProjectCard {
   progress?: Array<{ id: string; body: string; createdAt: string }>;
   likedByMe?: boolean;
   comments?: Array<{ id: string; body: string; author: { id: string; name: string }; mine: boolean; edited: boolean; createdAt: string }>;
+  offers?: OfferView[];
   // Contribution/hiring information (Section 4.2, Professional) attaches here once it exists.
 }
 
@@ -143,6 +149,7 @@ export function toDetail(
   tier: ViewerTier,
   screenshots: Array<{ id: string; url: string }> = [],
   engagement?: Pick<ProjectDetail, 'likedByMe' | 'comments'>,
+  offers?: OfferView[],
 ): ProjectDetail {
   const rules = FIELDS_BY_TIER[tier];
   const detail: ProjectDetail = toCard(project, tier);
@@ -169,5 +176,6 @@ export function toDetail(
     detail.likedByMe = engagement.likedByMe;
     detail.comments = engagement.comments;
   }
+  if (rules.offers && offers) detail.offers = offers;
   return detail;
 }

@@ -15,6 +15,9 @@ import { adminRouter } from '../src/modules/admin/routes.js';
 import { engagementRouter } from '../src/modules/engagement/routes.js';
 import { messagingRouter } from '../src/modules/messaging/routes.js';
 import { notificationsRouter } from '../src/modules/notifications/routes.js';
+import { offersRouter } from '../src/modules/offers/routes.js';
+import { rolesRouter } from '../src/modules/roles/routes.js';
+import { shareRouter } from '../src/modules/sharing/routes.js';
 import { reportsRouter } from '../src/modules/reports/routes.js';
 import { encrypt } from '../src/lib/crypto.js';
 import { GUEST_COOKIE } from '../src/modules/discovery/guestLimit.js';
@@ -79,6 +82,8 @@ let secrets: string[];
 /** Those, plus what must stay off every public response even for the people who may see it elsewhere. */
 let publicSecrets: string[];
 let fixtureReport: { id: string };
+let fixtureConversation: { id: string };
+let fixtureConversationReport: { id: string };
 
 // Signed URLs here are recorded, so a URL in a response can be traced to this call. They are also opaque,
 // which the real ones are not: Supabase's URL includes the object path. So these tests show the path is
@@ -192,6 +197,18 @@ beforeAll(async () => {
   fixtureReport = await prisma.report.create({
     data: { reporterId: users.uploader.id, targetType: 'PROJECT', targetId: live.id, reason: encrypt('This copies another team\'s work.', 'Report.reason') },
   });
+  fixtureConversation = await prisma.conversation.create({
+    data: {
+      participants: { create: [{ userId: users.uploader.id }, { userId: users.professional.id }] },
+      messages: { create: [{ senderId: users.uploader.id, body: encrypt('Hello there.', 'Message.body') }] },
+    },
+  });
+  fixtureConversationReport = await prisma.report.create({
+    data: { reporterId: users.uploader.id, targetType: 'CONVERSATION', targetId: fixtureConversation.id, reason: encrypt('Abusive messages in this chat.', 'Report.reason') },
+  });
+  await prisma.paidOffer.create({
+    data: { projectId: live.id, authorId: users.editor.id, title: 'Firmware developer', skills: ['c'], type: 'FIXED', compensation: '20000', currency: 'BDT', applicationRoute: 'Send a short note about your experience.', reviewStatus: 'APPROVED' },
+  });
 
   publicSecrets = [
     ...secrets,
@@ -240,7 +257,7 @@ describe('responseScan', () => {
 
 // ---------------------------------------------------------------- Every GET route, as every viewer
 
-type RouterName = 'app' | 'accounts' | 'projects' | 'discovery' | 'engagement' | 'messaging' | 'notifications' | 'reports' | 'admin';
+type RouterName = 'app' | 'accounts' | 'projects' | 'discovery' | 'engagement' | 'messaging' | 'offers' | 'notifications' | 'reports' | 'roles' | 'admin' | 'share';
 
 interface GetRoute {
   router: RouterName;
@@ -270,6 +287,18 @@ const GET_ROUTES: GetRoute[] = [
   { router: 'discovery', path: '/search', urls: () => ['/api/projects/search', '/api/projects/search?q=monitor&tags=iot'], statuses: signedIn, isPublic: true },
   { router: 'discovery', path: '/tags', urls: () => ['/api/projects/tags'], statuses: signedIn, isPublic: true },
   { router: 'discovery', path: '/:id', urls: () => [`/api/projects/${live.id}`, `/api/projects/${liveDemo.id}`], statuses: everyone(200), isPublic: true },
+  { router: 'discovery', path: '/:id/share', urls: () => [`/api/projects/${live.id}/share`], statuses: everyone(200), isPublic: true },
+  { router: 'share', path: '/:id', urls: () => [`/p/${live.id}`], statuses: everyone(200), isPublic: true },
+  { router: 'messaging', path: '/conversations', urls: () => ['/api/messaging/conversations'], statuses: signedIn },
+  { router: 'messaging', path: '/conversations/:id/messages', urls: () => [`/api/messaging/conversations/${fixtureConversation.id}/messages`], statuses: everyone(404, { guest: 401, uploader: 200, professional: 200 }) },
+  { router: 'offers', path: '/mine', urls: () => ['/api/offers/mine'], statuses: everyone(403, { guest: 401, professional: 200, editor: 200 }) },
+  { router: 'roles', path: '/mine', urls: () => ['/api/role-requests/mine'], statuses: signedIn },
+  { router: 'admin', path: '/reports/:id/conversation', urls: () => [`/api/admin/reports/${fixtureConversationReport.id}/conversation`], statuses: adminOnly },
+  { router: 'admin', path: '/offers', urls: () => ['/api/admin/offers'], statuses: adminOnly },
+  { router: 'admin', path: '/projects/removed', urls: () => ['/api/admin/projects/removed'], statuses: adminOnly },
+  { router: 'admin', path: '/users', urls: () => ['/api/admin/users', '/api/admin/users?q=test'], statuses: adminOnly },
+  { router: 'admin', path: '/users/:id/audit', urls: () => [`/api/admin/users/${users.uploader.id}/audit`], statuses: adminOnly },
+  { router: 'admin', path: '/role-requests', urls: () => ['/api/admin/role-requests'], statuses: adminOnly },
   { router: 'messaging', path: '/requests', urls: () => ['/api/messaging/requests', '/api/messaging/requests?box=outgoing'], statuses: signedIn },
   { router: 'notifications', path: '/', urls: () => ['/api/notifications'], statuses: signedIn },
   { router: 'notifications', path: '/unread-count', urls: () => ['/api/notifications/unread-count'], statuses: signedIn },
@@ -316,9 +345,12 @@ const ROUTERS: [RouterName, Router][] = [
   ['discovery', discoveryRouter],
   ['engagement', engagementRouter],
   ['messaging', messagingRouter],
+  ['offers', offersRouter],
   ['notifications', notificationsRouter],
   ['reports', reportsRouter],
+  ['roles', rolesRouter],
   ['admin', adminRouter],
+  ['share', shareRouter],
 ];
 const layersOf = (router: Router) => (router as unknown as { stack: RouterLayer[] }).stack;
 const appLayers = () => (app as unknown as { router: { stack: RouterLayer[] } }).router.stack;
@@ -349,7 +381,7 @@ describe('Route inventory', () => {
       .map((layer) => ROUTERS.find(([, router]) => router === layer.handle)?.[0] ?? layer.name);
     expect(mounted).toEqual([
       'requireHttps', 'helmetMiddleware', 'checkOrigin', 'jsonParser', 'cookieParser', 'loadSession',
-      'accounts', 'projects', 'discovery', 'engagement', 'messaging', 'notifications', 'reports', 'admin',
+      'accounts', 'projects', 'discovery', 'engagement', 'messaging', 'offers', 'notifications', 'reports', 'roles', 'admin', 'share',
       '<anonymous>', 'errorHandler',
     ]);
   });
@@ -367,9 +399,9 @@ const CARD = ['id', 'isSynthetic', 'stage', 'summary', 'tags', 'thumbnailUrl', '
 const UPLOADER_CARD = [...CARD, 'overview'];
 const FULL_CARD = [...UPLOADER_CARD, 'owner', 'likeCount', 'commentCount'];
 const DEMO = ['demoUrl', 'screenshots'];
-const FULL_DETAIL = [...FULL_CARD, ...DEMO, 'comments', 'likedByMe', 'milestones', 'problem', 'progress', 'team'];
+const FULL_DETAIL = [...FULL_CARD, ...DEMO, 'comments', 'likedByMe', 'milestones', 'offers', 'problem', 'progress', 'team'];
 /** The team's preview shows the content a Professional will see, without likes and comments. */
-const PREVIEW_DETAIL = FULL_DETAIL.filter((f) => !['likeCount', 'commentCount', 'comments', 'likedByMe'].includes(f));
+const PREVIEW_DETAIL = FULL_DETAIL.filter((f) => !['likeCount', 'commentCount', 'comments', 'likedByMe', 'offers'].includes(f));
 
 describe('Exact field lists', () => {
   const cardOf = (res: Res, id: string) => {

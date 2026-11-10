@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { Link } from 'react-router';
-import { MILESTONE_LABELS, STAGE_LABELS, type ProjectDetail, type ViewerTier } from '../api';
+import { MILESTONE_LABELS, OFFER_TYPE_LABELS, STAGE_LABELS, type ProjectDetail, type ViewerTier } from '../api';
 import { Avatar } from './Avatar';
 import { ContactButton } from './ContactButton';
 import { Engagement } from './Engagement';
@@ -20,6 +21,28 @@ function Locked({ children }: { children: React.ReactNode }) {
     <p className="locked-note">
       <span aria-hidden="true">🔒</span> {children}
     </p>
+  );
+}
+
+/** FR12: copies the public share link, which shows a preview card on social media and grants no extra access. */
+function ShareButton({ id }: { id: string }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'shown'>('idle');
+  const link = `${window.location.origin}/p/${id}`;
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setState('copied');
+    } catch {
+      setState('shown');
+    }
+  }
+  return (
+    <>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={copy}>
+        {state === 'copied' ? '✓ Link copied' : 'Share'}
+      </button>
+      {state === 'shown' && <input className="input" readOnly value={link} aria-label="Share link" onFocus={(e) => e.target.select()} />}
+    </>
   );
 }
 
@@ -56,6 +79,7 @@ export function ProjectView({ project, tier }: { project: ProjectDetail; tier: V
             </a>
           )}
           {tier !== 'GUEST' && <ContactButton projectId={project.id} name="the team" label="Contact the team" />}
+          <ShareButton id={project.id} />
           {tier !== 'GUEST' && <ReportButton targetType="PROJECT" targetId={project.id} label="Report project" />}
         </div>
       </header>
@@ -83,6 +107,35 @@ export function ProjectView({ project, tier }: { project: ProjectDetail; tier: V
             </section>
           )}
         </>
+      )}
+
+      {project.offers && project.offers.length > 0 && (
+        <section className="card card-pad stack" aria-labelledby="offers-title">
+          <h2 id="offers-title">Paid offers</h2>
+          {project.offers.map((o) => (
+            <div key={o.id} className="offer stack">
+              <div className="row space-between">
+                <strong>{o.title}</strong>
+                <span className="badge badge-amber">
+                  {OFFER_TYPE_LABELS[o.type] ?? o.type} · {o.compensation} {o.currency}
+                </span>
+              </div>
+              <ul className="chips" aria-label="Skills">
+                {o.skills.map((s) => (
+                  <li key={s} className="chip">
+                    {s}
+                  </li>
+                ))}
+              </ul>
+              <p className="comment-body">{o.applicationRoute}</p>
+              <div className="row">
+                <ContactButton offerId={o.id} name="the offer’s author" label="Apply" className="btn btn-primary btn-sm" />
+                <ReportButton targetType="OFFER" targetId={o.id} />
+              </div>
+            </div>
+          ))}
+          <p className="muted small">{project.offers[0].paymentNotice}</p>
+        </section>
       )}
 
       {project.comments && <Engagement project={project} />}

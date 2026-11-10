@@ -97,7 +97,10 @@ server/
   src/modules/projects/       FR02–FR04 drafts, submit, revisions, screenshots, team, progress, milestones, hide, delete
   src/modules/discovery/      FR05 feed, FR06 search, FR07 project view; visibility.ts holds the Section 4.2 field table
   src/modules/engagement/     FR08 likes, FR09 comments (Professionals only)
-  src/modules/messaging/      FR10 contact requests; introductions are encrypted
+  src/modules/messaging/      FR10 contact requests and private messages; introductions and message bodies are encrypted
+  src/modules/offers/         FR11 paid offers, reviewed by an Admin, shown to Professionals only
+  src/modules/sharing/        FR12 public share links and the /p/:id preview page
+  src/modules/roles/          FR15 requests for the Professional role
   src/modules/notifications/  In-app notices: list, unread count, mark as read; notify() for other modules
   src/modules/reports/        FR13 filing reports; reasons are encrypted with lib/crypto.ts
   src/modules/admin/          Admin-only routes: review queue (reviews.ts), report queue (reports.ts); FR14–FR16 will attach here
@@ -152,6 +155,11 @@ Run `npm test`. The verbose reporter prints one line per check:
 | Notifications | Own notifications only; another user's is a 404, the same as a missing one; an invitation notifies the invitee | `notifications.test.ts` |
 | FR08, FR09 Likes and comments | A double like counts once (enforced by the database); Guests, Uploaders, Admins and Restricted accounts are denied; comments come back as plain text; only the author edits or deletes; counts and comments appear in the Professional view only | `engagement.test.ts` |
 | FR10 Contact requests | Introduction stored encrypted; no duplicate pending request; accepting twice, even at the same moment, gives one conversation; declining gives none; third parties get 404 | `messaging.test.ts` |
+| FR10 Private messages | Body stored encrypted; non-participants, Admins included, get 404; Restricted users read but cannot send; conversations survive a hidden or deleted project | `messages.test.ts` |
+| FR11 Paid offers | Uploaders and Guests never receive offer fields; every term required; Admin review; a closed offer takes no new requests | `offers.test.ts` |
+| FR12 Sharing | Only the URL, title, 150-character summary and thumbnail; hostile titles escaped; unpublished projects not shareable | `sharing.test.ts` |
+| FR14–FR16 Admin controls | Removal needs a confirmed report; invalid status changes refused; a ban ends live sessions and keeps projects; Admins read a conversation only through an open report, and each read is audited | `moderation.test.ts` |
+| Final security check | A Guest gets 401 on every non-public route; another user's ids give 404; role fields in request bodies are ignored. Route table: `docs/route-security.md` | `security.test.ts` |
 | FR13 Reports and review | Reason stored encrypted; a report changes nothing about its target; non-Admins denied; rate limited; a forced failure during any decision leaves no partial change | `reports.test.ts` |
 | Response audit | Every GET route, and the mutating routes that return data, scanned per viewer for forbidden keys and values (`tests/responseScan.ts`); exact field lists; 404 for anything unpublished; screenshots signed only for allowed tiers; one guest budget shared by feed and direct links, also under parallel requests | `views.test.ts` |
 

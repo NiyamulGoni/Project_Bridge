@@ -6,6 +6,6 @@ export default defineConfig({
   server: {
     port: 5173,
     // Same-origin API calls in development, so the session cookie just works.
-    proxy: { '/api': 'http://localhost:4000' },
+    proxy: { '/api': 'http://localhost:4000', '/p': 'http://localhost:4000' },
   },
 });

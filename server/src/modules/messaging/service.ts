@@ -21,6 +21,20 @@ const notPending = () => new HttpError(409, 'NOT_PENDING', 'This request is no l
 
 /** The recipient is resolved here, so the sender never sees an email or even needs one. */
 async function resolveRecipient(sender: AuthUser, input: z.infer<typeof createRequestSchema>) {
+  if (input.offerId) {
+    // Offers are shown to Professionals only, so to anyone else this one does not exist.
+    const offer = sender.role === 'PROFESSIONAL'
+      ? await prisma.paidOffer.findFirst({
+          where: { id: input.offerId, reviewStatus: 'APPROVED', project: ELIGIBLE },
+          select: { id: true, title: true, status: true, authorId: true, projectId: true, author: { select: { status: true } } },
+        })
+      : null;
+    if (!offer) throw notFound('Offer');
+    if (offer.authorId === sender.id) throw new HttpError(400, 'VALIDATION_ERROR', 'You cannot contact yourself.');
+    if (offer.status !== 'OPEN') throw new HttpError(409, 'OFFER_CLOSED', 'This offer is closed and takes no new requests.');
+    if (offer.author.status !== 'ACTIVE') throw new HttpError(409, 'NOT_CONTACTABLE', "The offer's author can't be contacted right now.");
+    return { recipientId: offer.authorId, projectId: offer.projectId, offerId: offer.id, about: ` about the offer "${offer.title}"` };
+  }
   if (input.projectId) {
     const project = await prisma.project.findFirst({
       where: { ...ELIGIBLE, id: input.projectId },
@@ -30,23 +44,23 @@ async function resolveRecipient(sender: AuthUser, input: z.infer<typeof createRe
     if (project.ownerId === sender.id) throw new HttpError(400, 'VALIDATION_ERROR', 'You cannot contact yourself.');
     const reachable = project.owner.status === 'ACTIVE' && (PERMISSIONS.contact.roles as readonly string[]).includes(project.owner.role);
     if (!reachable) throw new HttpError(409, 'NOT_CONTACTABLE', "This project's team can't be contacted right now.");
-    return { recipientId: project.ownerId, projectId: project.id, about: ` about "${project.title}"` };
+    return { recipientId: project.ownerId, projectId: project.id, offerId: null, about: ` about "${project.title}"` };
   }
   if (input.userId === sender.id) throw new HttpError(400, 'VALIDATION_ERROR', 'You cannot contact yourself.');
   // An account that cannot be contacted looks the same as one that does not exist.
   const recipient = await prisma.user.findFirst({ where: { ...CONTACTABLE, id: input.userId }, select: { id: true } });
   if (!recipient) throw notFound('User');
-  return { recipientId: recipient.id, projectId: null, about: '' };
+  return { recipientId: recipient.id, projectId: null, offerId: null, about: '' };
 }
 
 /** The introduction is stored encrypted. A unique pendingKey blocks a second pending request. */
 export async function createRequest(sender: AuthUser, input: z.infer<typeof createRequestSchema>) {
-  const { recipientId, projectId, about } = await resolveRecipient(sender, input);
-  const pendingKey = `${sender.id}:${recipientId}:${projectId ?? ''}`;
+  const { recipientId, projectId, offerId, about } = await resolveRecipient(sender, input);
+  const pendingKey = `${sender.id}:${recipientId}:${projectId ?? ''}${offerId ? `:${offerId}` : ''}`;
   try {
     return await prisma.$transaction(async (tx) => {
       const request = await tx.contactRequest.create({
-        data: { senderId: sender.id, recipientId, projectId, introduction: encrypt(input.introduction, INTRO_CONTEXT), pendingKey },
+        data: { senderId: sender.id, recipientId, projectId, offerId, introduction: encrypt(input.introduction, INTRO_CONTEXT), pendingKey },
       });
       await notify(
         { recipientId, eventType: 'CONTACT_REQUEST', message: `${sender.name} wants to get in touch${about}.`, targetType: 'ContactRequest', targetId: request.id },

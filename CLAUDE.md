@@ -48,25 +48,25 @@ Demo accounts (password `Password123!`): `admin@projectbridge.test` (Sourav, Adm
 When you add things, these tests will fail until you update them on purpose:
 
 - `server/tests/helpers.ts` `resetDb()`: add `deleteMany()` for each new table, children before parents.
+- `server/tests/security.test.ts`: every router must be in `MOUNTS`, and a route a Guest may call must be in `PUBLIC`.
 - `server/tests/views.test.ts`: every GET route must be listed in `GET_ROUTES` with its status per viewer; every router must be in `ROUTERS`; the "app mounts the known routers" test lists the exact mount order. New fields in a role's view change the `CARD`, `FULL_CARD` and `FULL_DETAIL` lists.
 - `server/tests/permissions.test.ts`: `PROJECT_ROUTES` and `ADMIN_ROUTES` list every route on those routers with its gate.
 
 ## Status (10 Nov 2026)
 
-Done, with screens and tests (744 tests pass): accounts, projects, feed, search, project view (F01–F07), central permissions, role-based views, encryption and request hardening, audit log with old and new values, notifications, reports and the Admin report queue (F13), atomic Admin review decisions, likes and comments (F08, F09), contact requests (F10 part 1).
+All 13 backend steps are built, with screens and tests: accounts, projects, feed, search, project view (F01–F07), central permissions, role-based views, encryption and request hardening, audit log, notifications, reports and Admin review (F13), likes and comments (F08, F09), contact requests and private messages (F10), paid offers (F11), share links (F12), project removal (F14), role requests and promotion (F15), account access control and audited message evidence (F16), and the final security check.
 
-Known gaps: reports on `OFFER` targets are not yet checked against a real record (add that in Step 9). Accepted contact requests open a conversation, but there is no messaging yet (Step 8).
+`docs/route-security.md` lists every route with its permission, record-level check and tests. Regenerate it after adding a route: `cd server && npx tsx --env-file=.env scripts/route-table.mts`.
 
-## Next steps
+Decisions worth knowing:
 
-Do one step at a time, then typecheck, run the relevant tests, and build the step's screens.
+- A project can be removed only on a CONFIRMED report about it (`POST /api/admin/reports/:id/confirm`, then `POST /api/admin/projects/:id/remove`). Re-review is the only way back.
+- Access control (`POST /api/admin/users/:id/status`) applies to Professional accounts only, never the Admin's own, and only along the allowed transitions in `server/src/modules/admin/moderation.ts`.
+- Admins read private messages only through `GET /api/admin/reports/:id/conversation`, which needs an OPEN report about that conversation and writes an audit row on every read.
+- Paid offers are visible only when APPROVED and OPEN, and only in the Professional project view. Every offer response carries a notice that the platform processes no payments.
+- The share page `/p/:id` is served by the API server; Vite proxies `/p` in development.
 
-- **Step 8, private messages (FR10 part 2).** Add a Message model with an encrypted body, and routes to list conversations, read messages (cursor pagination) and send messages (rate limited). Only participants can read or send; everyone else, including Admins, gets 404. Existing conversations survive a project being hidden or deleted. Suspended or banned participants lose access. Done when tests prove non-participant denial, that the stored body is not plaintext, and that restricted users can read but not send.
-- **Step 9, paid offers (FR11).** Add PaidOffer: skills, type, compensation, currency, application route, OPEN or CLOSED, and a review status. Only an active Professional who owns or edits the project can create one, and all terms are required. Offers go through the Admin review queue. Only approved, open offers are visible, and only to the Professional and Admin tiers. Closing an offer blocks new contact requests that come from it. Responses state that the platform processes no payments. Done when tests prove Uploaders and Guests never receive offer fields.
-- **Step 10, public sharing (FR12).** Add `GET /api/projects/:id/share` returning only the canonical URL, title, 150-character summary and thumbnail. Add `GET /p/:id`, returning a small HTML page with escaped Open Graph tags that forwards to the app. Only published projects are shareable. A share link grants no extra access and does not use the guest card budget. Done when tests prove no restricted field appears and a hostile project title is escaped.
-- **Step 11, remove a project (FR14).** Admin route to remove a project with a required reason and a confirmed report or review decision. In one transaction: set REMOVED, write the audit row, notify the owner. A re-review route is the only way back (REMOVED to SUBMITTED). Removing a project never changes the owner's account. Done when tests prove a removed project disappears from feed, search and direct links, and an unconfirmed report cannot trigger removal.
-- **Step 12, roles, access status and message evidence (FR15, FR16).** RoleRequest model and routes for an Uploader to request Professional. Admin routes: list users, view a user's audit history, approve a role change (Uploader to Professional only, reason required, no self-promotion, ownership kept). An access route sets status with a required reason, allowing only ACTIVE to or from RESTRICTED, ACTIVE to or from SUSPENDED, ACTIVE or SUSPENDED to BANNED, and BANNED to ACTIVE; Professional accounts only; Admins cannot target themselves. In one transaction: status, delete sessions on suspend or ban, audit with old and new values, notify. Never delete owned projects. An Admin can read a conversation only through an open report that references it, and each read writes an audit row. Done when tests prove invalid transitions are refused, a ban ends live sessions, and Admins cannot read a conversation without a linked open report.
-- **Step 13, final security check.** No new features. Review every route in `server/src/modules` and produce a table of route, permission, record-level check and the test covering it. Add tests for any gap: changing another user's id in a URL, Guest access to protected routes, role fields sent in request bodies, restricted fields in list and detail responses.
+What is left is polish and acceptance testing: click through each screen, fix what looks wrong, and keep the tests passing.
 
 ## Git
 

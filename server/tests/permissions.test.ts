@@ -68,6 +68,20 @@ const ADMIN_ROUTES: ListedRoute[] = [
   { method: 'get', path: '/reports', gate: 'review' },
   { method: 'get', path: '/reports/:id', gate: 'review' },
   { method: 'post', path: '/reports/:id/dismiss', gate: 'review', body: { note: 'Nothing wrong was found.' } },
+  { method: 'post', path: '/reports/:id/confirm', gate: 'review', body: { note: 'The report is correct.' } },
+  { method: 'get', path: '/reports/:id/conversation', gate: 'review' },
+  { method: 'get', path: '/offers', gate: 'review' },
+  { method: 'post', path: '/offers/:id/approve', gate: 'review' },
+  { method: 'post', path: '/offers/:id/reject', gate: 'review', body: { note: 'The terms are unclear.' } },
+  { method: 'get', path: '/projects/removed', gate: 'removeProject' },
+  { method: 'post', path: '/projects/:id/remove', gate: 'removeProject', body: { reason: 'Copied work.', reportId: 'no-such-report' } },
+  { method: 'post', path: '/projects/:id/re-review', gate: 'removeProject', body: { reason: 'The owner fixed it.' } },
+  { method: 'get', path: '/users', gate: 'controlAccess' },
+  { method: 'get', path: '/users/:id/audit', gate: 'controlAccess' },
+  { method: 'post', path: '/users/:id/status', gate: 'controlAccess', body: { status: 'RESTRICTED', reason: 'Spam comments.' } },
+  { method: 'get', path: '/role-requests', gate: 'changeRole' },
+  { method: 'post', path: '/role-requests/:id/approve', gate: 'changeRole', body: { reason: 'Verified employer.' } },
+  { method: 'post', path: '/role-requests/:id/reject', gate: 'changeRole', body: { reason: 'Not enough detail.' } },
 ];
 
 const projectUrl = (route: ListedRoute) => `/api/projects${route.path === '/' ? '' : route.path.replace(/:\w+/g, 'no-such-id')}`;
@@ -93,6 +107,11 @@ function expectNotFound(res: { status: number; body: { error?: { code?: string; 
 const projectNotFound = (route: ListedRoute) => (route.path.startsWith('/invites/') ? 'Invitation not found.' : 'Project not found.');
 const reviewNotFound = (route: ListedRoute) => {
   if (route.path.startsWith('/reports/')) return 'No open report with that id.';
+  if (route.path.startsWith('/offers/')) return 'No offer waiting for review.';
+  if (route.path === '/projects/:id/remove') return 'No live project with that id.';
+  if (route.path === '/projects/:id/re-review') return 'No removed project with that id.';
+  if (route.path.startsWith('/users/')) return 'User not found.';
+  if (route.path.startsWith('/role-requests/')) return 'No role request waiting for review.';
   return route.path.startsWith('/reviews/projects/') ? 'No submission waiting for review.' : 'No revision waiting for review.';
 };
 
@@ -598,7 +617,8 @@ describe('Removing a team member', () => {
 // ---------------------------------------------------------------- Admin review queue
 
 describe('Admin review routes', () => {
-  const REVIEW_ROUTES = ADMIN_ROUTES.filter((r) => r.gate === 'review');
+  // Every Admin decision route, whichever Admin permission gates it.
+  const REVIEW_ROUTES = ADMIN_ROUTES.filter((r) => r.gate !== 'adminRole');
 
   it.each(REVIEW_ROUTES)('$method $path: Guest gets 401', async (route) => {
     expectError(await send(guest, route, adminUrl(route)), 401, 'UNAUTHENTICATED');
