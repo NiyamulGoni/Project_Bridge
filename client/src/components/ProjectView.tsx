@@ -44,7 +44,7 @@ export function ProjectView({ project, tier }: { project: ProjectDetail; tier: V
           <ul className="chips" aria-label="Tags">
             {project.tags.map((tag) => (
               <li key={tag} className="chip">
-                #{tag}
+                {tag}
               </li>
             ))}
           </ul>

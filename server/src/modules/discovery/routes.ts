@@ -15,12 +15,13 @@ import { cardInclude, ELIGIBLE, ENGAGEMENT_COUNTS, FIELDS_BY_TIER, NEWEST_FIRST,
 export const discoveryRouter = Router();
 
 const pageParam = z.coerce.number().int().min(1).max(1000).default(1);
-const feedQuery = z.object({ page: pageParam });
+/** default = newest published; recent = most recently updated; interaction = likes + comments. */
+const feedQuery = z.object({ page: pageParam, sort: z.enum(['default', 'recent', 'interaction']).default('default') });
 
 discoveryRouter.get('/feed', async (req, res) => {
   const parsed = feedQuery.safeParse(req.query);
-  if (!parsed.success) throw new HttpError(400, 'VALIDATION_ERROR', 'Invalid page number.');
-  const { page } = parsed.data;
+  if (!parsed.success) throw new HttpError(400, 'VALIDATION_ERROR', 'Invalid page number or sort option.');
+  const { page, sort } = parsed.data;
   const pageSize = config.feedPageSize;
   const offset = (page - 1) * pageSize;
   const tier = viewerTier(req.user);
@@ -35,9 +36,28 @@ discoveryRouter.get('/feed', async (req, res) => {
     return;
   }
 
+  // Guests keep the fixed order above because their card budget depends on it.
+  if (sort === 'interaction') {
+    const ranked = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT p."id"
+      FROM "Project" p
+      WHERE p."status" = 'PUBLISHED'
+      ORDER BY (
+        (SELECT COUNT(*) FROM "ProjectLike" l WHERE l."projectId" = p."id") +
+        (SELECT COUNT(*) FROM "Comment" c WHERE c."projectId" = p."id")
+      ) DESC, p."publishedAt" DESC NULLS LAST, p."id" DESC
+      OFFSET ${offset} LIMIT ${pageSize + 1}`;
+    const ids = ranked.slice(0, pageSize).map((r) => r.id);
+    const found = await prisma.project.findMany({ where: { ...ELIGIBLE, id: { in: ids } }, include: cardInclude(tier) });
+    const byId = new Map(found.map((p) => [p.id, p]));
+    const items = ids.flatMap((id) => (byId.has(id) ? [toCard(byId.get(id)!, tier)] : []));
+    res.json({ tier, page, pageSize, items, hasMore: ranked.length > pageSize });
+    return;
+  }
+
   const rows = await prisma.project.findMany({
     where: ELIGIBLE,
-    orderBy: NEWEST_FIRST,
+    orderBy: sort === 'recent' ? [{ updatedAt: 'desc' }, { id: 'desc' }] : NEWEST_FIRST,
     include: cardInclude(tier),
     skip: offset,
     take: pageSize + 1,
@@ -73,6 +93,10 @@ discoveryRouter.get('/search', requireAuth, async (req, res) => {
     ...(q ? { title: { contains: q, mode: 'insensitive' } } : {}),
     ...(tags.length ? { tags: { hasEvery: tags } } : {}),
   };
+  // Remember what people look for; failing to log must never fail the search.
+  if (q && page === 1) {
+    void prisma.searchLog.create({ data: { userId: req.user!.id, term: q.toLowerCase() } }).catch(() => undefined);
+  }
   const [rows, total] = await Promise.all([
     prisma.project.findMany({
       where,
@@ -93,6 +117,43 @@ discoveryRouter.get('/search', requireAuth, async (req, res) => {
     items: rows.slice(0, pageSize).map((p) => toCard(p, tier)),
     hasMore: rows.length > pageSize,
   });
+});
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const suggestQuery = z.object({ q: z.string().trim().max(100).default('') });
+
+/**
+ * Live suggestions for the search box, from the last 7 days only: search terms ranked by how often
+ * they were searched, and project names ranked by new likes + comments. With no text it shows what is trending.
+ */
+discoveryRouter.get('/suggest', requireAuth, async (req, res) => {
+  const parsed = suggestQuery.safeParse(req.query);
+  if (!parsed.success) throw new HttpError(400, 'VALIDATION_ERROR', 'Invalid search text.');
+  const q = parsed.data.q.toLowerCase();
+  const since = new Date(Date.now() - WEEK_MS);
+  const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
+
+  const [terms, projects] = await Promise.all([
+    prisma.$queryRaw<Array<{ term: string; n: bigint }>>`
+      SELECT "term", COUNT(*) AS n FROM "SearchLog"
+      WHERE "createdAt" >= ${since} AND "term" LIKE ${like}
+      GROUP BY "term" ORDER BY n DESC, "term" ASC LIMIT 5`,
+    prisma.$queryRaw<Array<{ id: string; title: string; n: bigint }>>`
+      SELECT p."id", p."title",
+        ((SELECT COUNT(*) FROM "ProjectLike" l WHERE l."projectId" = p."id" AND l."createdAt" >= ${since}) +
+         (SELECT COUNT(*) FROM "Comment" c WHERE c."projectId" = p."id" AND c."createdAt" >= ${since})) AS n
+      FROM "Project" p
+      WHERE p."status" = 'PUBLISHED' AND LOWER(p."title") LIKE ${like}
+      ORDER BY n DESC, p."publishedAt" DESC NULLS LAST LIMIT 5`,
+  ]);
+
+  const items = [
+    ...terms.map((t) => ({ kind: 'search' as const, text: t.term, score: Number(t.n) })),
+    ...projects.map((p) => ({ kind: 'project' as const, text: p.title, id: p.id, score: Number(p.n) })),
+  ]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8);
+  res.json({ items });
 });
 
 /** Tag chips for the search bar: tags in use on published projects, most common first. */

@@ -137,7 +137,7 @@ export function MyProjects() {
                 </div>
                 <span className="muted small">
                   {STAGE_LABELS[p.stage]} · updated {new Date(p.updatedAt).toLocaleDateString()}
-                  {p.tags.length > 0 && ` · ${p.tags.map((t) => `#${t}`).join(' ')}`}
+                  {p.tags.length > 0 && ` · ${p.tags.join(' ')}`}
                 </span>
                 {p.status === 'CHANGES_REQUESTED' && p.reviewNote && <span className="small review-note">Admin: {p.reviewNote}</span>}
               </div>

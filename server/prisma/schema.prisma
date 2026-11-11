@@ -31,6 +31,7 @@ model User {
   sessions         Session[]
   emailTokens      EmailToken[]
   projects         Project[]
+  searchLogs       SearchLog[]
   memberships      ProjectMember[]
   notifications    Notification[]
   reports          Report[]
@@ -331,4 +332,16 @@ model ConversationParticipant {
 
   @@id([conversationId, userId])
   @@index([userId])
+}
+
+/// One row per name search a signed-in user ran; feeds the one-week "popular searches" suggestions.
+model SearchLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Lowercased search text.
+  term      String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt, term])
 }

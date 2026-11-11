@@ -7,6 +7,14 @@ import { CardSkeleton } from '../components/CardSkeleton';
 import { GuestCapPrompt } from '../components/GuestCapPrompt';
 import { ProjectCard } from '../components/ProjectCard';
 import { SearchBar } from '../components/SearchBar';
+import { TagSidebar } from '../components/TagSidebar';
+
+type SortOption = 'default' | 'recent' | 'interaction';
+const SORTS: Array<{ value: SortOption; label: string }> = [
+  { value: 'recent', label: 'Most Recent' },
+  { value: 'interaction', label: 'Most interaction' },
+  { value: 'default', label: 'Default' },
+];
 
 const TIER_NOTES: Record<FeedPage['tier'], string> = {
   GUEST: 'Guest preview · up to 20 projects',
@@ -22,6 +30,8 @@ export function Explore() {
   const tags = useMemo(() => tagParam.split(',').filter(Boolean), [tagParam]);
   // FR06: search is for signed-in users; guests always get the feed.
   const searching = Boolean(user) && (q !== '' || tags.length > 0);
+  const sortParam = params.get('sort');
+  const sort: SortOption = SORTS.some((s) => s.value === sortParam) ? (sortParam as SortOption) : 'default';
 
   const [items, setItems] = useState<Card[]>([]);
   const [page, setPage] = useState(0);
@@ -39,7 +49,7 @@ export function Explore() {
       try {
         const path = searching
           ? `/projects/search?${new URLSearchParams({ q, tags: tags.join(','), page: String(next) })}`
-          : `/projects/feed?page=${next}`;
+          : `/projects/feed?page=${next}&sort=${user ? sort : 'default'}`;
         const res = await api<FeedPage | SearchPage>(path);
         setItems((prev) => (replace ? res.items : [...prev, ...res.items]));
         setPage(next);
@@ -56,7 +66,7 @@ export function Explore() {
         setLoading(false);
       }
     },
-    [searching, q, tags],
+    [searching, q, tags, sort, user],
   );
 
   // Reload from the first page whenever the viewer or the search changes.
@@ -71,8 +81,15 @@ export function Explore() {
     setParams(next);
   }
 
+  function changeSort(next: SortOption) {
+    const nextParams = new URLSearchParams(params);
+    if (next === 'default') nextParams.delete('sort');
+    else nextParams.set('sort', next);
+    setParams(nextParams);
+  }
+
   const firstLoad = loading && items.length === 0;
-  const filterText = [q && `“${q}”`, tags.length > 0 && `tags ${tags.map((t) => `#${t}`).join(' + ')}`].filter(Boolean).join(' with ');
+  const filterText = [q && `“${q}”`, tags.length > 0 && `tags ${tags.join(' + ')}`].filter(Boolean).join(' with ');
 
   return (
     <main className="page">
@@ -92,6 +109,9 @@ export function Explore() {
         )
       )}
 
+      <div className={user ? 'explore-layout' : undefined}>
+        {user && <TagSidebar tags={tags} onChange={(next) => search(q, next)} />}
+        <div className="explore-main">
       {searching && total !== null && !firstLoad && (
         <div className="row space-between results-bar" role="status">
           <span>
@@ -100,6 +120,21 @@ export function Explore() {
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => search('', [])}>
             Clear filters
           </button>
+        </div>
+      )}
+
+      {user && !searching && (
+        <div className="row sort-bar" style={{ justifyContent: 'flex-end' }}>
+          <label htmlFor="feed-sort" className="muted">
+            Sort by
+          </label>
+          <select id="feed-sort" className="input" style={{ width: 'auto' }} value={sort} onChange={(e) => changeSort(e.target.value as SortOption)}>
+            {SORTS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 
@@ -157,6 +192,8 @@ export function Explore() {
         </div>
       )}
       {capLimit !== null && <GuestCapPrompt limit={capLimit} />}
+        </div>
+      </div>
     </main>
   );
 }
