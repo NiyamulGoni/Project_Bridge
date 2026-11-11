@@ -136,6 +136,8 @@ model Project {
   tags                String[]  @default([])
   /// IDEA | PROTOTYPE | MVP | PILOT | LAUNCHED
   stage               String    @default("IDEA")
+  /// How much of the project is done, 0–100, set by its team for the bulletin. Null: worked out from milestones or stage.
+  completion          Int?
   /// HTTPS demonstration link (FR02).
   demoUrl             String?
   /// Owner shows the demo link and screenshots to other Uploaders (Section 4.2).

@@ -75,9 +75,10 @@ export async function updateProject(user: AuthUser, id: string, input: ProjectIn
     return;
   }
 
-  const { stage, publicDemo, ...contentPatch } = input;
-  if (stage !== undefined || publicDemo !== undefined) {
-    await prisma.project.update({ where: { id }, data: { stage, publicDemo } });
+  // Stage, demo visibility and completion are the team's own status: they apply at once, without review.
+  const { stage, publicDemo, completion, ...contentPatch } = input;
+  if (stage !== undefined || publicDemo !== undefined || completion !== undefined) {
+    await prisma.project.update({ where: { id }, data: { stage, publicDemo, completion } });
   }
   const touched = CONTENT_FIELDS.filter((f) => contentPatch[f] !== undefined);
   if (touched.length === 0 || !LIVE_STATUSES.includes(project.status)) return;
@@ -177,6 +178,7 @@ export async function workspace(user: AuthUser, id: string) {
       id: project.id,
       ...contentOf(project),
       stage: project.stage,
+      completion: project.completion,
       publicDemo: project.publicDemo,
       thumbnailUrl: project.thumbnailUrl,
       status: project.status,
@@ -243,9 +245,7 @@ export interface UploadedFile {
 
 export async function addMedia(user: AuthUser, id: string, files: UploadedFile[]) {
   const { project } = await loadProjectFor(user, id, 'edit');
-  if (!EDITABLE_DRAFT_STATUSES.includes(project.status)) {
-    throw new HttpError(409, 'MEDIA_LOCKED', 'Screenshots can be changed while the project is a draft or has requested changes.');
-  }
+  assertMediaEditable(project);
   if (files.length === 0) throw new HttpError(400, 'VALIDATION_ERROR', 'Choose at least one image.');
   const existing = await prisma.projectMedia.count({ where: { projectId: id } });
   if (existing + files.length > config.media.maxFiles) {
@@ -269,9 +269,7 @@ export async function addMedia(user: AuthUser, id: string, files: UploadedFile[]
 
 export async function removeMedia(user: AuthUser, id: string, mediaId: string) {
   const { project } = await loadProjectFor(user, id, 'edit');
-  if (!EDITABLE_DRAFT_STATUSES.includes(project.status)) {
-    throw new HttpError(409, 'MEDIA_LOCKED', 'Screenshots can be changed while the project is a draft or has requested changes.');
-  }
+  assertMediaEditable(project);
   const media = await prisma.projectMedia.findFirst({ where: { id: mediaId, projectId: id } });
   if (!media) throw new HttpError(404, 'NOT_FOUND', 'Screenshot not found.');
   await getStorage().remove([media.storagePath]);
@@ -286,9 +284,16 @@ function coverPath(project: Pick<Project, 'id' | 'thumbnailUrl'>): string | null
   return start >= 0 ? project.thumbnailUrl!.slice(start) : null;
 }
 
-function assertMediaEditable(project: Project) {
-  if (!EDITABLE_DRAFT_STATUSES.includes(project.status)) {
-    throw new HttpError(409, 'MEDIA_LOCKED', 'Images can be changed while the project is a draft or has requested changes.');
+/**
+ * Images are the project's showcase, so the team may change them on a draft and on a live project alike.
+ * Like the stage and demo visibility, they apply at once without review. They stay locked while the
+ * project is being reviewed, and once it is removed or deleted.
+ */
+const MEDIA_EDITABLE: readonly string[] = [...EDITABLE_DRAFT_STATUSES, ...LIVE_STATUSES];
+
+function assertMediaEditable(project: Pick<Project, 'status'>) {
+  if (!MEDIA_EDITABLE.includes(project.status)) {
+    throw new HttpError(409, 'MEDIA_LOCKED', 'Images cannot be changed while the project is in review, removed or deleted.');
   }
 }
 

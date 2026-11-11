@@ -12,7 +12,7 @@ This is a semester project. Aim for correct, secure and readable code with focus
 - `client/`: React 19, Vite, React Router. Pages in `client/src/pages/`, shared pieces in `client/src/components/`, API types and the `api()` helper in `client/src/api.ts`.
 
 ```bash
-npm install      # also regenerates the Prisma client; so do `npm run dev` and `npm test`
+npm install      # builds the Prisma client too; so do `npm run dev`, `npm start`, `npm test` (server/scripts/generate.mjs)
 npm run dev      # API on :4000, web on http://localhost:5173 (5174 if 5173 is busy)
 npm test         # whole suite, uses the projectbridge_test schema
 cd server && npx vitest run tests/<file>.test.ts   # one file

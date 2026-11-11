@@ -18,6 +18,19 @@ export function ProjectPage() {
   const { id = '' } = useParams();
   const { user, loading: authLoading } = useAuth();
   const [state, setState] = useState<State>({ kind: 'loading' });
+  // The owner and accepted editors may edit the bulletin. The workspace answers only them; anyone else gets 404.
+  const [canEdit, setCanEdit] = useState(false);
+  useEffect(() => {
+    setCanEdit(false);
+    if (authLoading || !user || user.role === 'ADMIN') return;
+    let cancelled = false;
+    api(`/projects/${encodeURIComponent(id)}/workspace`)
+      .then(() => !cancelled && setCanEdit(true))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [id, authLoading, user?.id, user?.role]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -59,7 +72,7 @@ export function ProjectPage() {
           )}
         </section>
       )}
-      {state.kind === 'ready' && <ProjectView project={state.project} tier={state.tier} />}
+      {state.kind === 'ready' && <ProjectView project={state.project} tier={state.tier} canEdit={canEdit} />}
     </main>
   );
 }

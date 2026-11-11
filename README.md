@@ -20,13 +20,19 @@ A platform connecting university projects with industry support. This is the CSE
 You need Node.js 20 or newer (tested on 24) and git.
 
 ```bash
-npm install
-# Get server/.env from the team lead (it holds the database password). Never commit it.
-# Template: server/.env.example. Optional: client/.env from client/.env.example.
-npx prisma migrate deploy --schema server/prisma/schema.prisma   # after pulling new migrations (e.g. projects_lifecycle)
-npm run seed            # demo accounts, 30 published synthetic projects, 1 submission, 1 pending revision (safe to re-run)
-npm test                # AT01–AT07 acceptance suite (uses the test schema)
+# Get server/.env and client/.env from the team lead (they hold the database password). Never commit them.
+npm install             # also builds the Prisma client
 npm run dev             # API on :4000, web app on http://localhost:5173
+npm test                # the automated tests (they use a separate test schema)
+```
+
+All the data, the demo projects included, lives in the shared Supabase database, so every laptop sees the same projects. Nobody needs to run `npx prisma generate`: `npm install`, `npm run dev`, `npm start` and `npm test` build the Prisma client by themselves, from the project folder or from `server/`. After `git pull`, run `npm install` once, then `npm run dev`.
+
+Only the team lead changes the database itself, and only after agreeing it with the team:
+
+```bash
+npx prisma migrate deploy --schema server/prisma/schema.prisma   # apply new migrations to the shared database
+npm run seed            # demo accounts and synthetic projects (safe to re-run)
 ```
 
 ### Database (Supabase)
@@ -165,8 +171,9 @@ Run `npm test`. The verbose reporter prints one line per check:
 
 **Visibility (Section 4.2)** is defined in one table, `FIELDS_BY_TIER` in `server/src/modules/discovery/visibility.ts`:
 - Guests get the title, tags, stage, thumbnail and a 150-character summary.
-- Uploaders also get 500 characters of the overview, plus the demo link and screenshots only if the owner ticked "Show to other Uploaders".
+- Uploaders also get 500 characters of the overview, the milestones and progress (shown as the project bulletin), plus the demo link and screenshots only if the owner ticked "Show to other Uploaders".
 - Professionals and Admins get the problem, the full overview, demo, screenshots, milestones, progress and team names. No tier ever receives emails.
+- Each project page opens with a **project bulletin**: the development stage on an Idea-to-Launched track, a pie chart of milestones done, in progress and planned, the milestone timeline, and a full-screen Present mode. Guests see the stage only.
 - An owner sees a pending or declined invitation only as a status with no name, so an invitation cannot be used to look up who an email belongs to. The name appears once the person accepts.
 - Invitations to Admins and blocked accounts look like any other, so they cannot reveal who those accounts are. They cannot be accepted, and stay pending for the owner.
 - Storage paths are never returned as a field. The one accepted exception is the path inside a Supabase signed URL, which is a project id and a random UUID, and is useless without the short-lived token.

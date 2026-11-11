@@ -50,7 +50,9 @@ const content = {
 
 /** Drafts may be saved incomplete; only the title is required (FR02). */
 export const createProjectSchema = z.object(content).partial().required({ title: true });
-export const updateProjectSchema = z.object(content).partial();
+/** The bulletin's "accomplished" share, 0–100, set by the team; null hands it back to the automatic estimate. */
+const completion = z.number({ invalid_type_error: 'Completion must be a whole number from 0 to 100.' }).int('Completion must be a whole number from 0 to 100.').min(0, 'Completion must be from 0 to 100.').max(100, 'Completion must be from 0 to 100.').nullable();
+export const updateProjectSchema = z.object({ ...content, completion }).partial();
 export type ProjectInput = z.infer<typeof updateProjectSchema>;
 
 /** Everything a project needs before it can be reviewed or stay live. */

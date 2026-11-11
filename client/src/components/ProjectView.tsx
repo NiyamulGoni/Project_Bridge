@@ -1,20 +1,13 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { MILESTONE_LABELS, OFFER_TYPE_LABELS, STAGE_LABELS, type ProjectDetail, type ViewerTier } from '../api';
+import { OFFER_TYPE_LABELS, STAGE_LABELS, type ProjectDetail, type ViewerTier } from '../api';
 import { Avatar } from './Avatar';
 import { ContactButton } from './ContactButton';
 import { Engagement } from './Engagement';
+import { ProjectBulletin } from './ProjectBulletin';
+import { ProjectStory } from './ProjectStory';
+import { ScreenshotGallery } from './ScreenshotGallery';
 import { ReportButton } from './ReportButton';
-
-function Paragraphs({ text }: { text: string }) {
-  return (
-    <>
-      {text.split(/\n{2,}/).map((para, i) => (
-        <p key={i}>{para}</p>
-      ))}
-    </>
-  );
-}
 
 function Locked({ children }: { children: React.ReactNode }) {
   return (
@@ -50,8 +43,7 @@ function ShareButton({ id }: { id: string }) {
  * FR07: renders whatever the server sent for this viewer. Restricted fields never reach the
  * browser, so this only decides how to explain what is missing.
  */
-export function ProjectView({ project, tier }: { project: ProjectDetail; tier: ViewerTier }) {
-  const isPro = tier === 'PROFESSIONAL';
+export function ProjectView({ project, tier, canEdit = false }: { project: ProjectDetail; tier: ViewerTier; canEdit?: boolean }) {
   const overviewTruncated = tier === 'UPLOADER' && project.overview?.endsWith('…');
 
   return (
@@ -84,6 +76,10 @@ export function ProjectView({ project, tier }: { project: ProjectDetail; tier: V
         </div>
       </header>
 
+      {project.screenshots && project.screenshots.length > 0 && <ScreenshotGallery title={project.title} shots={project.screenshots} />}
+
+      <ProjectBulletin title={project.title} stage={project.stage} milestones={project.milestones} progress={project.progress} completion={project.completion} projectId={project.id} editable={canEdit} />
+
       {tier === 'GUEST' ? (
         <section className="card card-pad stack">
           <Locked>
@@ -92,22 +88,9 @@ export function ProjectView({ project, tier }: { project: ProjectDetail; tier: V
           </Locked>
         </section>
       ) : (
-        <>
-          {project.problem && (
-            <section className="card card-pad stack" aria-labelledby="problem-title">
-              <h2 id="problem-title">Problem</h2>
-              <Paragraphs text={project.problem} />
-            </section>
-          )}
-          {project.overview && (
-            <section className="card card-pad stack" aria-labelledby="overview-title">
-              <h2 id="overview-title">{isPro ? 'Solution and overview' : 'Overview'}</h2>
-              <Paragraphs text={project.overview} />
-              {overviewTruncated && <Locked>Professionals see the full overview, roadmap and team.</Locked>}
-            </section>
-          )}
-        </>
+        <ProjectStory problem={project.problem} overview={project.overview} truncated={overviewTruncated} />
       )}
+
 
       {project.offers && project.offers.length > 0 && (
         <section className="card card-pad stack" aria-labelledby="offers-title">
@@ -139,37 +122,6 @@ export function ProjectView({ project, tier }: { project: ProjectDetail; tier: V
       )}
 
       {project.comments && <Engagement project={project} />}
-
-      {project.screenshots && project.screenshots.length > 0 && (
-        <section className="card card-pad stack" aria-labelledby="shots-title">
-          <h2 id="shots-title">Screenshots</h2>
-          <div className="screenshot-grid">
-            {project.screenshots.map((s, i) => (
-              <a key={s.id} href={s.url} target="_blank" rel="noopener noreferrer">
-                <img src={s.url} alt={`${project.title} screenshot ${i + 1}`} loading="lazy" />
-              </a>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {project.milestones && project.milestones.length > 0 && (
-        <section className="card card-pad stack" aria-labelledby="milestones-title">
-          <h2 id="milestones-title">Milestones</h2>
-          <ol className="milestone-list">
-            {project.milestones.map((m) => (
-              <li key={m.id} className={`milestone milestone-${m.status.toLowerCase()}`}>
-                <span className="milestone-dot" aria-hidden="true" />
-                <span className="milestone-title">{m.title}</span>
-                <span className={`badge ${m.status === 'DONE' ? 'badge-success' : m.status === 'IN_PROGRESS' ? 'badge-accent' : ''}`}>
-                  {MILESTONE_LABELS[m.status]}
-                </span>
-                {m.dueDate && <span className="muted small">due {new Date(m.dueDate).toLocaleDateString()}</span>}
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
 
       {project.progress && project.progress.length > 0 && (
         <section className="card card-pad stack" aria-labelledby="progress-title">
