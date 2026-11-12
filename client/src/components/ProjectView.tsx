@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { MILESTONE_LABELS, OFFER_TYPE_LABELS, STAGE_LABELS, type ProjectDetail, type ViewerTier } from '../api';
+import { api, MILESTONE_LABELS, OFFER_TYPE_LABELS, STAGE_LABELS, type ProjectDetail, type ViewerTier } from '../api';
+import { useAuth } from '../auth/AuthContext';
 import { Avatar } from './Avatar';
 import { ContactButton } from './ContactButton';
 import { Engagement } from './Engagement';
@@ -46,6 +47,47 @@ function ShareButton({ id }: { id: string }) {
   );
 }
 
+interface SocialLink {
+  service: string;
+  label: string;
+  href: string;
+}
+
+/**
+ * FR12: social media share links. The server gives them only to Professionals and to the project's
+ * own owner or team, so this renders nothing for anyone else.
+ */
+function SocialShare({ id }: { id: string }) {
+  const { user } = useAuth();
+  const [links, setLinks] = useState<SocialLink[]>([]);
+  // Guests and Admins are always refused, so they do not ask.
+  const mayAsk = user?.role === 'PROFESSIONAL' || user?.role === 'UPLOADER';
+
+  useEffect(() => {
+    setLinks([]);
+    if (!mayAsk) return;
+    let stale = false;
+    api<{ links: SocialLink[] }>(`/projects/${id}/share-links`)
+      .then((res) => !stale && setLinks(res.links))
+      .catch(() => undefined);
+    return () => {
+      stale = true;
+    };
+  }, [id, mayAsk]);
+
+  if (links.length === 0) return null;
+  return (
+    <div className="social-share" role="group" aria-label="Share on social media">
+      <span className="muted small">Share on</span>
+      {links.map((l) => (
+        <a key={l.service} className={`btn btn-secondary btn-sm social-${l.service}`} href={l.href} target="_blank" rel="noopener noreferrer">
+          {l.label}
+        </a>
+      ))}
+    </div>
+  );
+}
+
 /**
  * FR07: renders whatever the server sent for this viewer. Restricted fields never reach the
  * browser, so this only decides how to explain what is missing.
@@ -82,6 +124,7 @@ export function ProjectView({ project, tier }: { project: ProjectDetail; tier: V
           <ShareButton id={project.id} />
           {tier !== 'GUEST' && <ReportButton targetType="PROJECT" targetId={project.id} label="Report project" />}
         </div>
+        <SocialShare id={project.id} />
       </header>
 
       {tier === 'GUEST' ? (

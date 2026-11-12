@@ -43,6 +43,16 @@ model User {
   messages         Message[]
   offers           PaidOffer[]
   roleRequests     RoleRequest[]
+  profile          UserProfile?
+}
+
+/// Optional profile extras, in their own table so the User row (read on every request) is unchanged.
+model UserProfile {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Public URL of the cover photo in the cover bucket, under users/<userId>/.
+  coverUrl  String?
+  updatedAt DateTime @updatedAt
 }
 
 /// Server-side sessions so suspension/ban invalidates access on the next request (NFR-S3).

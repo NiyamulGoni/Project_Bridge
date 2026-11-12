@@ -281,6 +281,23 @@ export async function upload<T>(path: string, form: FormData): Promise<T> {
   return parse<T>(res);
 }
 
+/** GET /api/auth/me/profile: the signed-in user's own cover photo and all-time activity. */
+export interface MyProfile {
+  coverUrl: string | null;
+  memberSince: string;
+  stats: {
+    projects: { uploaded: number; published: number; inReview: number; drafts: number; hidden: number; removed: number; team: number };
+    likesReceived: number;
+    commentsReceived: number;
+    likesGiven: number;
+    commentsWritten: number;
+    contactRequestsSent: number;
+    contactRequestsReceived: number;
+    messagesSent: number;
+    offersPosted: number;
+  };
+}
+
 export const ROLE_LABELS: Record<Role, string> = {
   UPLOADER: 'Uploader (Project Developer)',
   PROFESSIONAL: 'Professional (Industry Expert)',

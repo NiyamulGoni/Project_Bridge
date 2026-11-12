@@ -2,7 +2,7 @@
  * Step 10 / FR12: public share links. They carry the Guest card and nothing more.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { app, createProject, createUser, prisma, request, resetDb } from './helpers.js';
+import { app, createProject, createUser, prisma, request, resetDb, signedInAgent } from './helpers.js';
 
 beforeEach(resetDb);
 
@@ -47,5 +47,63 @@ describe('Share links', () => {
     const project = await createProject(owner.id, { status });
     expect((await request(app).get(`/api/projects/${project.id}/share`)).status).toBe(404);
     expect((await request(app).get(`/p/${project.id}`)).status).toBe(404);
+  });
+});
+
+describe('Social media share links', () => {
+  async function setup() {
+    const owner = await createUser();
+    const project = await createProject(owner.id, { title: 'Solar & Pump' });
+    const path = `/api/projects/${project.id}/share-links`;
+    return { owner, project, path };
+  }
+
+  it('gives a Professional the links, pointing only at the public share page', async () => {
+    const { project, path } = await setup();
+    const pro = await createUser({ role: 'PROFESSIONAL' });
+    const res = await (await signedInAgent(pro.email)).get(path);
+    expect(res.status).toBe(200);
+    const shareUrl = `http://localhost:5173/p/${project.id}`;
+    expect(res.body.url).toBe(shareUrl);
+    expect(res.body.links.map((l: { service: string }) => l.service)).toEqual(['linkedin', 'facebook', 'x', 'whatsapp']);
+    for (const link of res.body.links) {
+      expect(Object.keys(link).sort()).toEqual(['href', 'label', 'service']);
+      expect(link.href).toMatch(/^https:\/\//);
+      expect(link.href).toContain(encodeURIComponent(shareUrl));
+    }
+    // The title is encoded, never pasted raw into a link.
+    expect(res.body.links[2].href).toContain('Solar%20%26%20Pump');
+  });
+
+  it('gives the owner and an accepted team member the links', async () => {
+    const { owner, project, path } = await setup();
+    expect((await (await signedInAgent(owner.email)).get(path)).status).toBe(200);
+
+    const member = await createUser();
+    await prisma.projectMember.create({ data: { projectId: project.id, userId: member.id, status: 'ACCEPTED', invitedById: owner.id } });
+    expect((await (await signedInAgent(member.email)).get(path)).status).toBe(200);
+  });
+
+  it('refuses a Guest, another Uploader, an invited-only user and an Admin', async () => {
+    const { owner, project, path } = await setup();
+    expect((await request(app).get(path)).status).toBe(401);
+
+    const other = await createUser();
+    const refused = await (await signedInAgent(other.email)).get(path);
+    expect(refused.status).toBe(403);
+    expect(refused.body.links).toBeUndefined();
+
+    const invited = await createUser();
+    await prisma.projectMember.create({ data: { projectId: project.id, userId: invited.id, status: 'INVITED', invitedById: owner.id } });
+    expect((await (await signedInAgent(invited.email)).get(path)).status).toBe(403);
+
+    const admin = await createUser({ role: 'ADMIN' });
+    expect((await (await signedInAgent(admin.email)).get(path)).status).toBe(403);
+  });
+
+  it.each(['DRAFT', 'HIDDEN', 'REMOVED', 'DELETED'])('gives nobody links for a %s project, not even its owner', async (status) => {
+    const owner = await createUser();
+    const project = await createProject(owner.id, { status });
+    expect((await (await signedInAgent(owner.email)).get(`/api/projects/${project.id}/share-links`)).status).toBe(404);
   });
 });

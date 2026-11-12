@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 import { api, ApiError, type FeedPage, type ProjectCard as Card, type SearchPage } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import { Alert } from '../components/Alert';
@@ -27,8 +27,8 @@ export function Explore() {
   const q = params.get('q') ?? '';
   const tagParam = params.get('tags') ?? '';
   const tags = useMemo(() => tagParam.split(',').filter(Boolean), [tagParam]);
-  // FR06: search is for signed-in users; guests always get the feed.
-  const searching = Boolean(user) && (q !== '' || tags.length > 0);
+  // FR06: everyone can search by project name and tags; a guest's results share their 20-project budget.
+  const searching = q !== '' || tags.length > 0;
   const sortParam = params.get('sort');
   const sort: SortOption = SORTS.some((s) => s.value === sortParam) ? (sortParam as SortOption) : 'default';
 
@@ -102,23 +102,10 @@ export function Explore() {
 
       <div className="explore-layout">
         <aside className="explore-side">
-          {user ? (
-            <details className="filters-toggle" open={filtersOpen} onToggle={(e) => setFiltersOpen(e.currentTarget.open)}>
-              <summary className="btn btn-secondary">Filters{tags.length + (q ? 1 : 0) > 0 ? ` (${tags.length + (q ? 1 : 0)})` : ''}</summary>
-              <FilterSidebar q={q} tags={tags} onSearch={search} />
-            </details>
-          ) : (
-            !authLoading && (
-              <div className="filters card">
-                <div className="filters-head">
-                  <h2>Filters</h2>
-                </div>
-                <p className="muted small filters-group">
-                  <Link to="/login">Sign in</Link> to search projects by name and filter them by tags.
-                </p>
-              </div>
-            )
-          )}
+          <details className="filters-toggle" open={filtersOpen} onToggle={(e) => setFiltersOpen(e.currentTarget.open)}>
+            <summary className="btn btn-secondary">Filters{tags.length + (q ? 1 : 0) > 0 ? ` (${tags.length + (q ? 1 : 0)})` : ''}</summary>
+            <FilterSidebar q={q} tags={tags} onSearch={search} suggestions={Boolean(user)} />
+          </details>
         </aside>
         <div className="explore-main">
 

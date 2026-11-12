@@ -708,7 +708,122 @@ code {
   background: var(--info);
 }
 
+/* ---------- Password fields ---------- */
+.password-wrap {
+  position: relative;
+}
+.password-wrap .input {
+  padding-right: 46px;
+}
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.password-toggle:hover {
+  color: var(--text);
+  background: var(--surface-muted);
+}
+.password-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+.password-rules {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 2px 12px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.password-rules li.ok {
+  color: var(--success);
+}
+
 /* ---------- Account ---------- */
+.profile-card {
+  overflow: hidden;
+}
+.profile-cover {
+  position: relative;
+  height: 180px;
+  background: linear-gradient(120deg, var(--navy), var(--accent));
+  background-size: cover;
+  background-position: center;
+}
+.profile-cover-actions {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.profile-cover-error {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 12px;
+}
+.profile-cover-error .alert {
+  margin: 0;
+}
+.stat-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+.stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.stat-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.stat-note {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+@media (max-width: 480px) {
+  .profile-cover {
+    height: 130px;
+  }
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 .profile {
   display: flex;
   align-items: center;
@@ -1696,4 +1811,12 @@ fieldset.filters-group > legend + * {
   .filters-toggle:not([open]) > .filters {
     display: flex;
   }
+}
+
+/* ---------- Social share links (FR12) ---------- */
+.social-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }

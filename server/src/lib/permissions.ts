@@ -14,7 +14,7 @@ export interface Permission {
 export const PERMISSIONS = {
   /** Create a project, submit it, accept a team invite. */
   publish: { roles: ['UPLOADER', 'PROFESSIONAL'], allowedWhenRestricted: false },
-  /** Change a project the user already has rights on. All roles, so those rights survive a role change. */
+  /** Change a project the user already has rights on, or their own profile. All roles, so those rights survive a role change. */
   edit: { roles: ['UPLOADER', 'PROFESSIONAL', 'ADMIN'], allowedWhenRestricted: false },
   like: { roles: ['PROFESSIONAL'], allowedWhenRestricted: false },
   comment: { roles: ['PROFESSIONAL'], allowedWhenRestricted: false },

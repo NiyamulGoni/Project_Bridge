@@ -51,8 +51,11 @@ async function lockGuestSession(tx: Prisma.TransactionClient, sessionId: string)
  * which direct links share. A guest pages through the projects already shown plus, while the budget
  * lasts, the newest ones not shown yet. Revisiting a page costs nothing, and newly published projects
  * cannot take the guest past the limit or push what they have seen out of reach.
+ *
+ * FR06: a guest's name/tag search uses this same budget, through `filter`: results already seen are
+ * free, new ones are charged, so searching can never show a guest more than the feed would.
  */
-export async function guestFeedPage(sessionId: string, offset: number, pageSize: number) {
+export async function guestFeedPage(sessionId: string, offset: number, pageSize: number, filter: Prisma.ProjectWhereInput = {}) {
   const limit = guestCardLimit();
   const take = Math.min(pageSize, limit - offset);
   return prisma.$transaction(async (tx) => {
@@ -60,13 +63,13 @@ export async function guestFeedPage(sessionId: string, offset: number, pageSize:
     const room = Math.max(limit - seen.length, 0);
     // One more than the budget can buy, to tell whether anything lies beyond it.
     const unseen = await tx.project.findMany({
-      where: { ...ELIGIBLE, id: { notIn: seen } },
+      where: { ...ELIGIBLE, ...filter, id: { notIn: seen } },
       orderBy: NEWEST_FIRST,
       select: { id: true },
       take: room + 1,
     });
     const rows = await tx.project.findMany({
-      where: { ...ELIGIBLE, id: { in: [...seen, ...unseen.slice(0, room).map((p) => p.id)] } },
+      where: { ...ELIGIBLE, ...filter, id: { in: [...seen, ...unseen.slice(0, room).map((p) => p.id)] } },
       orderBy: NEWEST_FIRST,
       include: { owner: { select: { name: true } } },
       skip: offset,

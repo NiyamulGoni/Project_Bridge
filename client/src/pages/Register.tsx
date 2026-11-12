@@ -4,8 +4,9 @@ import { api, ApiError } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import { Alert } from '../components/Alert';
 import { AuthLayout } from '../components/AuthLayout';
-import { FormField } from '../components/FormField';
+import { FormField, PasswordChecklist } from '../components/FormField';
 import { GoogleSignInButton } from '../components/GoogleSignInButton';
+import { emailProblem, nameProblem, passwordProblem } from '../passwordRules';
 
 export function Register() {
   const { refresh } = useAuth();
@@ -22,8 +23,16 @@ export function Register() {
     e.preventDefault();
     setErrors({});
     setFormError('');
-    if (form.password !== form.confirm) {
-      setErrors({ confirm: 'Passwords do not match.' });
+    const found: Record<string, string | undefined> = {
+      name: nameProblem(form.name),
+      email: emailProblem(form.email),
+      password: passwordProblem(form.password),
+      confirm: form.password !== form.confirm ? 'Passwords do not match.' : undefined,
+    };
+    const problems = Object.fromEntries(Object.entries(found).filter(([, v]) => v)) as Record<string, string>;
+    if (Object.keys(problems).length) {
+      setErrors(problems);
+      setFormError('Please correct the highlighted fields.');
       return;
     }
     setSubmitting(true);
@@ -54,11 +63,21 @@ export function Register() {
       <GoogleSignInButton text="signup_with" />
       {formError && <Alert tone="error">{formError}</Alert>}
       <form className="form" onSubmit={handleSubmit} noValidate>
-        <FormField label="Full name" autoComplete="name" value={form.name} onChange={update('name')} error={errors.name} required />
+        <FormField
+          label="Full name"
+          autoComplete="name"
+          hint="Letters only. Spaces, hyphens, apostrophes and periods are fine."
+          value={form.name}
+          onChange={update('name')}
+          error={errors.name}
+          maxLength={80}
+          required
+        />
         <FormField
           label="Email"
           type="email"
           autoComplete="email"
+          placeholder="name@example.com"
           value={form.email}
           onChange={update('email')}
           error={errors.email}
@@ -68,12 +87,14 @@ export function Register() {
           label="Password"
           type="password"
           autoComplete="new-password"
-          hint="At least 8 characters."
           value={form.password}
           onChange={update('password')}
           error={errors.password}
+          maxLength={128}
           required
-        />
+        >
+          <PasswordChecklist value={form.password} />
+        </FormField>
         <FormField
           label="Confirm password"
           type="password"

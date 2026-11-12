@@ -13,12 +13,14 @@ interface Props {
   q: string;
   tags: string[];
   onSearch: (q: string, tags: string[]) => void;
+  /** Live suggestions are for signed-in users; guests search without them. */
+  suggestions?: boolean;
 }
 
 const MAX_TAGS = 8;
 
 /** FR06: the Explore filters, in a sidebar. Project-name text plus tags; every selected tag must match. */
-export function FilterSidebar({ q, tags, onSearch }: Props) {
+export function FilterSidebar({ q, tags, onSearch, suggestions = false }: Props) {
   const navigate = useNavigate();
   const [text, setText] = useState(q);
   const [open, setOpen] = useState(false);
@@ -38,7 +40,7 @@ export function FilterSidebar({ q, tags, onSearch }: Props) {
 
   // Debounced suggestions (last week's searches and reactions) while the box is open; stale answers are ignored.
   useEffect(() => {
-    if (!open) return;
+    if (!open || !suggestions) return;
     let stale = false;
     const timer = setTimeout(() => {
       api<{ items: Suggestion[] }>(`/projects/suggest?${new URLSearchParams({ q: text.trim() })}`)
@@ -54,7 +56,7 @@ export function FilterSidebar({ q, tags, onSearch }: Props) {
       stale = true;
       clearTimeout(timer);
     };
-  }, [text, open]);
+  }, [text, open, suggestions]);
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -179,7 +181,7 @@ export function FilterSidebar({ q, tags, onSearch }: Props) {
                 <li key={tag}>
                   <label className={`filters-tag${on ? ' on' : ''}`}>
                     <input type="checkbox" checked={on} onChange={() => toggle(tag)} disabled={!on && tags.length >= MAX_TAGS} />
-                    <span className="filters-tag-name">#{tag}</span>
+                    <span className="filters-tag-name">{tag}</span>
                     {count !== null && <span className="filters-tag-count">{count}</span>}
                   </label>
                 </li>

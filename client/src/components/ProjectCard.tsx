@@ -1,6 +1,5 @@
 import { Link } from 'react-router';
 import { STAGE_LABELS, type ProjectCard as Card } from '../api';
-import { useAuth } from '../auth/AuthContext';
 import { Avatar } from './Avatar';
 
 // Cover gradients; the first tag picks one so related projects look alike.
@@ -21,7 +20,6 @@ export function coverFor(project: Pick<Card, 'tags' | 'title'>): string {
 }
 
 export function ProjectCard({ project }: { project: Card }) {
-  const { user } = useAuth();
   return (
     <article className="card project-card">
       <div className={`project-cover${project.thumbnailUrl ? ' has-image' : ''}`} style={{ background: coverFor(project) }} aria-hidden="true">
@@ -47,14 +45,10 @@ export function ProjectCard({ project }: { project: Card }) {
           <ul className="chips" aria-label="Tags">
             {project.tags.map((tag) => (
               <li key={tag} className="chip-item">
-                {user ? (
-                  // Searching is for signed-in users (FR06); the chip runs that search at once.
-                  <Link to={`/?tags=${encodeURIComponent(tag)}`} className="chip chip-link">
-                    {tag}
-                  </Link>
-                ) : (
-                  <span className="chip">{tag}</span>
-                )}
+                {/* Everyone can search by tag; the chip runs that search at once. */}
+                <Link to={`/?tags=${encodeURIComponent(tag)}`} className="chip chip-link">
+                  {tag}
+                </Link>
               </li>
             ))}
           </ul>

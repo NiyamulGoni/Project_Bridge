@@ -8,7 +8,7 @@ import { param } from '../../lib/params.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { toOfferView, VISIBLE_OFFER } from '../offers/service.js';
 import { signScreenshots } from '../projects/media.js';
-import { shareInfo } from '../sharing/service.js';
+import { shareInfo, socialShareLinks } from '../sharing/service.js';
 import { admitGuestToProject, getGuestSession, guestCardLimit, guestFeedPage, guestLimitReached } from './guestLimit.js';
 import { COMMENTS_SHOWN, toCommentView, type CommentSource } from '../engagement/service.js';
 import { cardInclude, ELIGIBLE, ENGAGEMENT_COUNTS, FIELDS_BY_TIER, NEWEST_FIRST, showsDemo, toCard, toDetail, viewerTier } from './visibility.js';
@@ -82,8 +82,11 @@ const searchQuery = z.object({
   page: pageParam,
 });
 
-/** FR06: case-insensitive name match combined with ALL selected tags, keeping the viewer's limits. */
-discoveryRouter.get('/search', requireAuth, async (req, res) => {
+/**
+ * FR06: case-insensitive name match combined with ALL selected tags, keeping the viewer's limits.
+ * Guests may search too: they see Guest cards and what they find draws on their 20-project budget.
+ */
+discoveryRouter.get('/search', async (req, res) => {
   const parsed = searchQuery.safeParse(req.query);
   if (!parsed.success) throw new HttpError(400, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Invalid search.');
   const { q, tags, page } = parsed.data;
@@ -95,10 +98,31 @@ discoveryRouter.get('/search', requireAuth, async (req, res) => {
     ...(q ? { title: { contains: q, mode: 'insensitive' } } : {}),
     ...(tags.length ? { tags: { hasEvery: tags } } : {}),
   };
-  // Remember what people look for; failing to log must never fail the search.
-  if (q && page === 1) {
-    void prisma.searchLog.create({ data: { userId: req.user!.id, term: q.toLowerCase() } }).catch(() => undefined);
+  // Remember what signed-in people look for; failing to log must never fail the search.
+  if (req.user && q && page === 1) {
+    void prisma.searchLog.create({ data: { userId: req.user.id, term: q.toLowerCase() } }).catch(() => undefined);
   }
+
+  if (tier === 'GUEST') {
+    const offset = (page - 1) * pageSize;
+    const limit = guestCardLimit();
+    if (offset >= limit) throw guestLimitReached();
+    const filter: Prisma.ProjectWhereInput = { ...(q ? { title: { contains: q, mode: 'insensitive' } } : {}), ...(tags.length ? { tags: { hasEvery: tags } } : {}) };
+    const guest = await getGuestSession(req, res);
+    const [found, total] = await Promise.all([guestFeedPage(guest.id, offset, pageSize, filter), prisma.project.count({ where })]);
+    res.json({
+      tier,
+      page,
+      pageSize,
+      total,
+      query: { q, tags },
+      items: found.rows.map((p) => toCard(p, tier)),
+      hasMore: found.hasMore,
+      guest: { limit, cardsServed: found.cardsServed, capReached: found.capReached },
+    });
+    return;
+  }
+
   const [rows, total] = await Promise.all([
     prisma.project.findMany({
       where,
@@ -158,8 +182,8 @@ discoveryRouter.get('/suggest', requireAuth, async (req, res) => {
   res.json({ items });
 });
 
-/** Tag chips for the search bar: tags in use on published projects, most common first. */
-discoveryRouter.get('/tags', requireAuth, async (_req, res) => {
+/** Tag chips for the search filters (tags are part of the Guest card, so guests get them too): tags in use on published projects, most common first. */
+discoveryRouter.get('/tags', async (_req, res) => {
   const rows = await prisma.project.findMany({ where: ELIGIBLE, select: { tags: true } });
   const counts = new Map<string, number>();
   for (const { tags } of rows) for (const tag of tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
@@ -173,6 +197,11 @@ discoveryRouter.get('/tags', requireAuth, async (_req, res) => {
 /** FR12: what a share link shows. The same for everyone, and free of the guest card budget. */
 discoveryRouter.get('/:id/share', async (req, res) => {
   res.json(await shareInfo(param(req, 'id')));
+});
+
+/** FR12: social media share links, for Professionals and the project's own team only. */
+discoveryRouter.get('/:id/share-links', requireAuth, async (req, res) => {
+  res.json(await socialShareLinks(req.user!, param(req, 'id')));
 });
 
 /**
