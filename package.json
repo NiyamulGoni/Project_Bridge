@@ -8,14 +8,12 @@
     "client"
   ],
   "scripts": {
-    "setup": "npm install && npm run db:migrate -w server && npm run seed -w server",
+    "setup": "npm install",
     "dev": "concurrently -n api,web -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
     "test": "npm test -w server",
     "seed": "npm run seed -w server",
     "build": "npm run build -w client",
-    "postinstall": "npm run generate -w server",
-    "predev": "npm run generate -w server",
-    "pretest": "npm run generate -w server"
+    "postinstall": "npm run generate -w server"
   },
   "devDependencies": {
     "concurrently": "^9.2.0"

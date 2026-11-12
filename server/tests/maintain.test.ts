@@ -147,3 +147,21 @@ describe('Progress and milestones', () => {
     expect(await prisma.projectRevision.count()).toBe(0);
   });
 });
+
+describe('Bulletin completion', () => {
+  it('the team sets it on a live project at once, without review; others cannot', async () => {
+    const { ownerAgent: owner, project } = await publishedSetup();
+    const url = `/api/projects/${project.id}`;
+    const set = await owner.patch(url).send({ completion: 80 });
+    expect(set.status).toBe(200);
+    expect(set.body.project.completion).toBe(80);
+    expect(await prisma.projectRevision.count({ where: { projectId: project.id } })).toBe(0);
+
+    const viewer = await signedInAgent((await createUser({ role: 'UPLOADER' })).email);
+    expect((await viewer.get(url)).body.project.completion).toBe(80);
+    expect((await viewer.patch(url).send({ completion: 5 })).status).toBe(404);
+
+    for (const bad of [101, -1, 50.5, '80']) expect({ bad, status: (await owner.patch(url).send({ completion: bad })).status }).toEqual({ bad, status: 400 });
+    expect((await owner.patch(url).send({ completion: null })).body.project.completion).toBeNull();
+  });
+});

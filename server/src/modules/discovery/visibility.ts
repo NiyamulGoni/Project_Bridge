@@ -23,7 +23,7 @@ interface TierRules {
   problem: boolean;
   /** Demo link and screenshots: never, only when the owner marked them public, or always. */
   demo: 'never' | 'ifPublic' | 'always';
-  /** Progress entries and milestones (the roadmap). */
+  /** Progress entries and milestones (the roadmap), shown as the project bulletin. Every signed-in tier gets it. */
   roadmap: boolean;
   /** Owner and accepted team members, by name only. */
   team: boolean;
@@ -35,13 +35,14 @@ interface TierRules {
 
 /**
  * Section 4.2, in one place. Guest: title, tags, thumbnail, 150-character summary.
- * Uploader: adds 500 characters of overview and owner-designated public demo material.
+ * Uploader: adds 500 characters of overview, owner-designated public demo material, and the roadmap
+ * (milestones and progress, for the project bulletin).
  * Professional: full overview, demo, progress and public team profile.
  * No tier ever receives contact details, drafts or unpublished material.
  */
 export const FIELDS_BY_TIER: Record<ViewerTier, TierRules> = {
   GUEST: { summaryLimit: GUEST_SUMMARY_LIMIT, overviewLimit: 0, problem: false, demo: 'never', roadmap: false, team: false, engagement: false, offers: false },
-  UPLOADER: { summaryLimit: GUEST_SUMMARY_LIMIT, overviewLimit: UPLOADER_OVERVIEW_LIMIT, problem: false, demo: 'ifPublic', roadmap: false, team: false, engagement: false, offers: false },
+  UPLOADER: { summaryLimit: GUEST_SUMMARY_LIMIT, overviewLimit: UPLOADER_OVERVIEW_LIMIT, problem: false, demo: 'ifPublic', roadmap: true, team: false, engagement: false, offers: false },
   PROFESSIONAL: { summaryLimit: null, overviewLimit: null, problem: true, demo: 'always', roadmap: true, team: true, engagement: true, offers: true },
 };
 
@@ -127,6 +128,8 @@ export interface ProjectDetail extends ProjectCard {
   team?: TeamMember[];
   milestones?: Array<{ id: string; title: string; status: string; dueDate: string | null }>;
   progress?: Array<{ id: string; body: string; createdAt: string }>;
+  /** The team's own "how much is done", 0–100, or null when it is left to milestones and stage. */
+  completion?: number | null;
   likedByMe?: boolean;
   comments?: Array<{ id: string; body: string; author: { id: string; name: string }; mine: boolean; edited: boolean; createdAt: string }>;
   offers?: OfferView[];
@@ -159,6 +162,7 @@ export function toDetail(
     detail.screenshots = screenshots;
   }
   if (rules.roadmap) {
+    detail.completion = project.completion ?? null;
     detail.milestones = [...project.milestones]
       .sort((a, b) => a.position - b.position)
       .map((m) => ({ id: m.id, title: m.title, status: m.status, dueDate: m.dueDate?.toISOString() ?? null }));

@@ -72,6 +72,7 @@ export const STATUS_LABELS: Record<ProjectStatus, { label: string; badge: string
 };
 
 export type MilestoneStatus = 'PLANNED' | 'IN_PROGRESS' | 'DONE';
+export const MILESTONE_STATUSES: MilestoneStatus[] = ['PLANNED', 'IN_PROGRESS', 'DONE'];
 export const MILESTONE_LABELS: Record<MilestoneStatus, string> = { PLANNED: 'Planned', IN_PROGRESS: 'In progress', DONE: 'Done' };
 
 /** FR07: what the server chose to send for this viewer; absent fields are not available to them. */
@@ -83,6 +84,8 @@ export interface ProjectDetail extends ProjectCard {
   milestones?: Array<{ id: string; title: string; status: MilestoneStatus; dueDate: string | null }>;
   progress?: Array<{ id: string; body: string; createdAt: string }>;
   /** Professional tier only. */
+  /** The team's own "how much is done", 0–100; null leaves it to milestones and stage. */
+  completion?: number | null;
   likedByMe?: boolean;
   comments?: ProjectComment[];
   offers?: PaidOffer[];
@@ -109,6 +112,7 @@ export interface Workspace {
   project: ProjectContent & {
     id: string;
     stage: Stage;
+    completion: number | null;
     publicDemo: boolean;
     thumbnailUrl: string | null;
     status: ProjectStatus;

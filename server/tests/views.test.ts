@@ -400,9 +400,11 @@ describe('Route inventory', () => {
 
 const CARD = ['id', 'isSynthetic', 'stage', 'summary', 'tags', 'thumbnailUrl', 'title'];
 const UPLOADER_CARD = [...CARD, 'overview'];
+/** The Uploader detail view adds the roadmap, for the project bulletin. */
+const ROADMAP = ['completion', 'milestones', 'progress'];
 const FULL_CARD = [...UPLOADER_CARD, 'owner', 'likeCount', 'commentCount'];
 const DEMO = ['demoUrl', 'screenshots'];
-const FULL_DETAIL = [...FULL_CARD, ...DEMO, 'comments', 'likedByMe', 'milestones', 'offers', 'problem', 'progress', 'team'];
+const FULL_DETAIL = [...FULL_CARD, ...DEMO, 'comments', 'completion', 'likedByMe', 'milestones', 'offers', 'problem', 'progress', 'team'];
 /** The team's preview shows the content a Professional will see, without likes and comments. */
 const PREVIEW_DETAIL = FULL_DETAIL.filter((f) => !['likeCount', 'commentCount', 'comments', 'likedByMe', 'offers'].includes(f));
 
@@ -441,14 +443,14 @@ describe('Exact field lists', () => {
   it.each([
     ['guest', 'live', CARD],
     ['guest', 'liveDemo', CARD],
-    ['uploader', 'live', UPLOADER_CARD],
-    ['uploader', 'liveDemo', [...UPLOADER_CARD, ...DEMO]],
+    ['uploader', 'live', [...UPLOADER_CARD, ...ROADMAP]],
+    ['uploader', 'liveDemo', [...UPLOADER_CARD, ...DEMO, ...ROADMAP]],
     ['professional', 'live', FULL_DETAIL],
     ['professional', 'liveDemo', FULL_DETAIL],
     ['admin', 'live', FULL_DETAIL],
     ['admin', 'liveDemo', FULL_DETAIL],
     // The team reads the public view as any other viewer of their tier.
-    ['owner', 'live', UPLOADER_CARD],
+    ['owner', 'live', [...UPLOADER_CARD, ...ROADMAP]],
     ['editor', 'live', FULL_DETAIL],
   ] as [Viewer, 'live' | 'liveDemo', string[]][])('detail view for %s on %s', async (viewer, which, expected) => {
     const project = which === 'live' ? live : liveDemo;
@@ -482,7 +484,7 @@ describe('Exact field lists', () => {
 
   describe('team views', () => {
     const PROJECT = [
-      'demoUrl', 'id', 'overview', 'owner', 'problem', 'publicDemo', 'publishedAt', 'reviewNote', 'stage', 'status', 'submittedAt', 'summary', 'tags', 'thumbnailUrl', 'title', 'updatedAt',
+      'completion', 'demoUrl', 'id', 'overview', 'owner', 'problem', 'publicDemo', 'publishedAt', 'reviewNote', 'stage', 'status', 'submittedAt', 'summary', 'tags', 'thumbnailUrl', 'title', 'updatedAt',
     ];
 
     it('workspace: the owner sees the whole team list, naming only those who accepted, and no emails', async () => {

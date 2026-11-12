@@ -6,6 +6,7 @@ import { Alert } from '../components/Alert';
 import { Avatar } from '../components/Avatar';
 import { FormField } from '../components/FormField';
 import { TextAreaField } from '../components/FormControls';
+import { ProjectBulletin } from '../components/ProjectBulletin';
 
 const MEMBER_LABELS = { INVITED: 'Invited', ACCEPTED: 'Editor', DECLINED: 'Declined' } as const;
 
@@ -105,6 +106,8 @@ export function ProjectManage() {
         <p className="muted small">Progress, milestones and team changes appear right away. They do not need Admin review.</p>
       </header>
       {message && <Alert tone={message.tone}>{message.text}</Alert>}
+
+      <ProjectBulletin title={ws.project.title} stage={ws.project.stage} milestones={ws.milestones} progress={ws.progress} completion={ws.project.completion} />
 
       <section className="card card-pad stack" aria-labelledby="milestones-title">
         <h2 id="milestones-title">Milestones</h2>

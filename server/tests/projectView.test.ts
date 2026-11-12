@@ -63,12 +63,15 @@ describe('Guest view', () => {
 });
 
 describe('Uploader view', () => {
-  it('adds 500 characters of overview but no demo material unless the owner made it public', async () => {
+  it('adds 500 characters of overview and the roadmap, but no demo material unless the owner made it public', async () => {
     const { project } = await richProject({ publicDemo: false });
     const p = (await viewAs('UPLOADER', project.id)).body.project;
     expect(p.overview.length).toBeLessThanOrEqual(500);
     expect(p.summary.length).toBeLessThanOrEqual(150);
-    for (const hidden of ['problem', 'demoUrl', 'screenshots', 'team', 'owner', 'milestones', 'progress']) {
+    // The project bulletin: every signed-in tier sees milestones and progress.
+    expect(p.milestones).toEqual([expect.objectContaining({ title: 'Pilot', status: 'IN_PROGRESS' })]);
+    expect(Array.isArray(p.progress)).toBe(true);
+    for (const hidden of ['problem', 'demoUrl', 'screenshots', 'team', 'owner']) {
       expect(p[hidden]).toBeUndefined();
     }
   });

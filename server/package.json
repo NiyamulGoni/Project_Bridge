@@ -12,7 +12,10 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset --force",
     "seed": "tsx prisma/seed.ts",
-    "generate": "prisma generate"
+    "generate": "node scripts/generate.mjs",
+    "predev": "npm run generate",
+    "prestart": "npm run generate",
+    "pretest": "npm run generate"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

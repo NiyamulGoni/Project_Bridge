@@ -185,6 +185,27 @@ describe('Optional cover image', () => {
     expect(coverStorage.objects.size).toBe(0);
   });
 
+  it('lets the team change images on a live project, but not while it is in review', async () => {
+    const { agent } = await uploaderAgent();
+    const { body } = await agent.post('/api/projects').send(COMPLETE_PROJECT);
+    const screenshot = () => agent.post(`/api/projects/${body.id}/media`).attach('screenshots', PNG_BYTES, { filename: 'a.png', contentType: 'image/png' });
+
+    await prisma.project.update({ where: { id: body.id }, data: { status: 'SUBMITTED' } });
+    expect((await screenshot()).body.error.code).toBe('MEDIA_LOCKED');
+    expect((await attachCover(agent, body.id)).body.error.code).toBe('MEDIA_LOCKED');
+
+    for (const status of ['PUBLISHED', 'HIDDEN']) {
+      await prisma.project.update({ where: { id: body.id }, data: { status, publishedAt: new Date() } });
+      expect({ status, screenshot: (await screenshot()).status, cover: (await attachCover(agent, body.id)).status }).toEqual({ status, screenshot: 201, cover: 201 });
+    }
+    const [first] = await prisma.projectMedia.findMany({ where: { projectId: body.id } });
+    expect((await agent.delete(`/api/projects/${body.id}/media/${first.id}`)).status).toBe(204);
+    expect(await prisma.projectMedia.count({ where: { projectId: body.id } })).toBe(1);
+
+    await prisma.project.update({ where: { id: body.id }, data: { status: 'REMOVED' } });
+    expect((await screenshot()).body.error.code).toBe('MEDIA_LOCKED');
+  });
+
   it('shows the cover to Guests on the published card', async () => {
     const { agent } = await uploaderAgent();
     const { body } = await agent.post('/api/projects').send(COMPLETE_PROJECT);

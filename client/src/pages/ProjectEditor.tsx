@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { api, ApiError, STAGE_LABELS, STAGES, STATUS_LABELS, upload, type Stage, type Workspace } from '../api';
 import { useAuth } from '../auth/AuthContext';
@@ -8,6 +8,16 @@ import { CheckboxField, SelectField, TagInput, TextAreaField } from '../componen
 import { coverFor } from '../components/ProjectCard';
 
 const LIMITS = { title: 120, summary: 200, problem: 2000, overview: 5000 };
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_SCREENSHOTS = 5;
+
+/** The same checks the server makes, so a bad file is caught before the draft is created. */
+function imageProblem(file: File): string | null {
+  if (!IMAGE_TYPES.includes(file.type)) return `${file.name} is not a PNG, JPEG or WebP image.`;
+  if (file.size > MAX_IMAGE_BYTES) return `${file.name} is larger than 2 MB.`;
+  return null;
+}
 
 interface Form {
   title: string;
@@ -50,11 +60,20 @@ export function ProjectEditor() {
   const [busy, setBusy] = useState(false);
   const [declared, setDeclared] = useState(false);
   const [loading, setLoading] = useState(Boolean(id));
+  // A new project's images wait here and upload as soon as the draft exists.
+  const [pendingCover, setPendingCover] = useState<File | null>(null);
+  const [pendingShots, setPendingShots] = useState<File[]>([]);
+  const coverPreview = useMemo(() => (pendingCover ? URL.createObjectURL(pendingCover) : null), [pendingCover]);
+  const shotPreviews = useMemo(() => pendingShots.map((f) => URL.createObjectURL(f)), [pendingShots]);
+  useEffect(() => () => void (coverPreview && URL.revokeObjectURL(coverPreview)), [coverPreview]);
+  useEffect(() => () => shotPreviews.forEach((u) => URL.revokeObjectURL(u)), [shotPreviews]);
 
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    if ((location.state as { saved?: boolean } | null)?.saved) setMessage({ tone: 'success', text: 'Draft created. Keep editing, or add screenshots below.' });
+    const state = location.state as { saved?: boolean; imageError?: string } | null;
+    if (state?.imageError) setMessage({ tone: 'error', text: `Draft created, but ${state.imageError} Try adding them again below.` });
+    else if (state?.saved) setMessage({ tone: 'success', text: 'Draft created. Keep editing, then preview and submit it for review.' });
     api<Workspace>(`/projects/${id}/workspace`)
       .then((res) => {
         setWs(res);
@@ -69,6 +88,42 @@ export function ProjectEditor() {
   const isLive = status === 'PUBLISHED' || status === 'HIDDEN';
   const locked = status === 'SUBMITTED' || status === 'REMOVED';
   const isOwner = !ws || ws.myRole === 'OWNER';
+  /** Images are the showcase: changeable on a draft and on a live project, not while in review. */
+  const canEditImages = isDraft || isLive;
+
+  function pickCover(files: FileList | null) {
+    const file = files?.[0];
+    if (!file) return;
+    const problem = imageProblem(file);
+    if (problem) return setMessage({ tone: 'error', text: problem });
+    setPendingCover(file);
+  }
+
+  function pickShots(files: FileList | null) {
+    if (!files?.length) return;
+    const chosen = Array.from(files);
+    const problem = chosen.map(imageProblem).find(Boolean);
+    if (problem) return setMessage({ tone: 'error', text: problem });
+    const room = MAX_SCREENSHOTS - pendingShots.length;
+    if (chosen.length > room) setMessage({ tone: 'info', text: `A project can have at most ${MAX_SCREENSHOTS} screenshots, so only the first ${room} were added.` });
+    setPendingShots((list) => [...list, ...chosen.slice(0, room)]);
+  }
+
+  /** Uploads a new draft's chosen images. Returns what failed, if anything, in words. */
+  async function uploadPending(projectId: string): Promise<string | null> {
+    const failed: string[] = [];
+    if (pendingCover) {
+      const data = new FormData();
+      data.append('cover', pendingCover);
+      await upload(`/projects/${projectId}/cover`, data).catch(() => failed.push('the cover image'));
+    }
+    if (pendingShots.length) {
+      const data = new FormData();
+      for (const file of pendingShots) data.append('screenshots', file);
+      await upload(`/projects/${projectId}/media`, data).catch(() => failed.push('the screenshots'));
+    }
+    return failed.length ? `${failed.join(' and ')} could not be uploaded.` : null;
+  }
 
   function set<K extends keyof Form>(key: K, value: Form[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -88,7 +143,8 @@ export function ProjectEditor() {
     try {
       if (!id) {
         const res = await api<{ id: string }>('/projects', { body: form });
-        navigate(`/projects/${res.id}/edit`, { replace: true, state: { saved: true } });
+        const imageError = await uploadPending(res.id);
+        navigate(`/projects/${res.id}/edit`, { replace: true, state: { saved: true, imageError } });
         return true;
       }
       const res = await api<Workspace>(`/projects/${id}`, { method: 'PATCH', body: form });
@@ -220,7 +276,7 @@ export function ProjectEditor() {
         )}
       </header>
 
-      {!id && <p className="muted small">Create the draft first, then you can add a cover image and screenshots and submit it for review.</p>}
+      {!id && <p className="muted small">Fill in your project, add images if you have them, and create the draft. You can preview it before submitting it for review.</p>}
       {message && <Alert tone={message.tone}>{message.text}</Alert>}
       {status === 'CHANGES_REQUESTED' && ws?.project.reviewNote && (
         <Alert tone="info">
@@ -296,6 +352,52 @@ export function ProjectEditor() {
             onChange={(v) => set('publicDemo', v)}
             disabled={locked}
           />
+          {!id && (
+            <div className="stack new-images">
+              <h2 className="new-images-title">Images (optional)</h2>
+              <p className="muted small">They upload when you create the draft. PNG, JPEG or WebP, up to 2 MB each.</p>
+              <div className="stack">
+                <strong className="small">Cover image</strong>
+                <div className="cover-preview" style={{ background: coverFor({ tags: form.tags, title: form.title || 'P' }) }}>
+                  {coverPreview ? <img src={coverPreview} alt="Chosen cover image" /> : <span className="muted small">No cover yet</span>}
+                </div>
+                <div className="row">
+                  <label className="btn btn-secondary btn-sm file-button">
+                    {pendingCover ? 'Replace cover' : 'Choose cover image'}
+                    <input type="file" accept={IMAGE_TYPES.join(',')} className="visually-hidden" onChange={(e) => { pickCover(e.target.files); e.target.value = ''; }} />
+                  </label>
+                  {pendingCover && (
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPendingCover(null)}>
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="stack">
+                <strong className="small">
+                  Screenshots ({pendingShots.length}/{MAX_SCREENSHOTS})
+                </strong>
+                {pendingShots.length > 0 && (
+                  <ul className="screenshot-grid editable">
+                    {shotPreviews.map((url, i) => (
+                      <li key={url}>
+                        <img src={url} alt={`Chosen screenshot ${i + 1}`} />
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPendingShots((list) => list.filter((_, j) => j !== i))}>
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {pendingShots.length < MAX_SCREENSHOTS && (
+                  <label className="btn btn-secondary btn-sm file-button">
+                    Choose screenshots
+                    <input type="file" accept={IMAGE_TYPES.join(',')} multiple className="visually-hidden" onChange={(e) => { pickShots(e.target.files); e.target.value = ''; }} />
+                  </label>
+                )}
+              </div>
+            </div>
+          )}
           <div className="row">
             <button type="submit" className="btn btn-secondary" disabled={busy || locked}>
               {busy ? 'Saving…' : isLive ? 'Send changes for review' : id ? 'Save draft' : 'Create draft'}
@@ -309,12 +411,13 @@ export function ProjectEditor() {
           <h2 id="cover-title">Cover image (optional)</h2>
           <p className="muted small">
             Shown at the top of your project card to everyone, Guests included. A wide PNG, JPEG or WebP photo works best, up to 2 MB.
-            {!isDraft && ' The cover can be changed while the project is a draft.'}
+            {isLive && ' Changes show at once, without review.'}
+            {locked && ' The cover cannot be changed while the project is in review.'}
           </p>
           <div className="cover-preview" style={{ background: coverFor(ws.project) }}>
             {ws.project.thumbnailUrl ? <img src={ws.project.thumbnailUrl} alt="Cover image" /> : <span className="muted small">No cover yet</span>}
           </div>
-          {isDraft && (
+          {canEditImages && (
             <div className="row">
               <label className="btn btn-secondary file-button">
                 {ws.project.thumbnailUrl ? 'Replace cover' : 'Add cover image'}
@@ -342,13 +445,17 @@ export function ProjectEditor() {
       {id && ws && (
         <section className="card card-pad stack" aria-labelledby="shots-title">
           <h2 id="shots-title">Screenshots (optional)</h2>
-          <p className="muted small">PNG, JPEG or WebP, up to 2 MB each, at most 5.{!isDraft && ' Screenshots can be changed while the project is a draft.'}</p>
+          <p className="muted small">
+            Shown as a gallery on your project page. PNG, JPEG or WebP, up to 2 MB each, at most 5.
+            {isLive && ' Changes show at once, without review.'}
+            {locked && ' Screenshots cannot be changed while the project is in review.'}
+          </p>
           {ws.media.length > 0 && (
             <ul className="screenshot-grid editable">
               {ws.media.map((m, i) => (
                 <li key={m.id}>
                   {m.url ? <img src={m.url} alt={`Screenshot ${i + 1}`} /> : <div className="screenshot-missing">Screenshot {i + 1}</div>}
-                  {isDraft && (
+                  {canEditImages && (
                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => onRemoveMedia(m.id)}>
                       Remove
                     </button>
@@ -357,7 +464,7 @@ export function ProjectEditor() {
               ))}
             </ul>
           )}
-          {isDraft && ws.media.length < 5 && (
+          {canEditImages && ws.media.length < MAX_SCREENSHOTS && (
             <label className="btn btn-secondary file-button">
               Add screenshots
               <input
