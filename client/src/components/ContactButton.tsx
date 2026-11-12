@@ -5,10 +5,10 @@ import { useAuth } from '../auth/AuthContext';
 import { TextDialog } from './TextDialog';
 
 /**
- * FR10: send a contact request about a project (it reaches the owner) or to a person.
+ * FR10: send a contact request about a project (it reaches the owner), an offer (its author) or to a person.
  * Only active Uploaders and Professionals may; the server checks everything again.
  */
-export function ContactButton({ projectId, userId, name, label, className = 'btn btn-secondary' }: { projectId?: string; userId?: string; name: string; label: string; className?: string }) {
+export function ContactButton({ projectId, userId, offerId, name, label, className = 'btn btn-secondary' }: { projectId?: string; userId?: string; offerId?: string; name: string; label: string; className?: string }) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -21,7 +21,7 @@ export function ContactButton({ projectId, userId, name, label, className = 'btn
     setBusy(true);
     setError('');
     try {
-      await api('/messaging/requests', { body: { ...(projectId ? { projectId } : { userId }), introduction } });
+      await api('/messaging/requests', { body: { ...(offerId ? { offerId } : projectId ? { projectId } : { userId }), introduction } });
       setDone(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not send the request.');

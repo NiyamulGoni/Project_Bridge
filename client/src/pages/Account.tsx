@@ -1,4 +1,7 @@
-import { ROLE_LABELS, type Role } from '../api';
+import { useEffect, useState } from 'react';
+import { api, ApiError, ROLE_LABELS, type Role } from '../api';
+import { Alert } from '../components/Alert';
+import { TextDialog } from '../components/TextDialog';
 import { useAuth } from '../auth/AuthContext';
 import { Avatar } from '../components/Avatar';
 
@@ -47,15 +50,75 @@ export function Account() {
         </dl>
       </section>
 
-      {user.role === 'UPLOADER' && (
-        <div className="hint-card">
-          <span aria-hidden="true">💡</span>
-          <p>
-            Want Professional access? An Admin can change your role after reviewing a request. This is coming in a
-            later release.
-          </p>
-        </div>
-      )}
+      {user.role === 'UPLOADER' && <RoleRequest active={user.status === 'ACTIVE'} />}
     </main>
+  );
+}
+
+interface MyRoleRequest {
+  id: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  decisionNote: string | null;
+  createdAt: string;
+}
+
+/** FR15: an Uploader asks for the Professional role; an Admin decides. */
+function RoleRequest({ active }: { active: boolean }) {
+  const [latest, setLatest] = useState<MyRoleRequest | null | undefined>(undefined);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = () =>
+    api<{ items: MyRoleRequest[] }>('/role-requests/mine')
+      .then((res) => setLatest(res.items[0] ?? null))
+      .catch(() => setLatest(null));
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function send(reason: string) {
+    setBusy(true);
+    setError('');
+    try {
+      await api('/role-requests', { body: { reason } });
+      setOpen(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not send the request.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card card-pad stack" aria-labelledby="role-request-title">
+      <h2 id="role-request-title">Professional access</h2>
+      <p className="muted">Professionals are industry experts who can like, comment and post paid offers. An Admin reviews each request.</p>
+      {latest?.status === 'PENDING' && <Alert tone="info">Your request is waiting for an Admin.</Alert>}
+      {latest?.status === 'REJECTED' && <Alert tone="info">Your last request was not approved{latest.decisionNote ? `: ${latest.decisionNote}` : '.'} You can ask again.</Alert>}
+      {latest !== undefined && latest?.status !== 'PENDING' && (
+        <button type="button" className="btn btn-primary" onClick={() => setOpen(true)} disabled={!active} style={{ alignSelf: 'flex-start' }}>
+          Request Professional role
+        </button>
+      )}
+      {open && (
+        <TextDialog
+          title="Request the Professional role"
+          intro="Say who you are and where you work, so an Admin can verify it."
+          label="Why should you be a Professional?"
+          submitLabel="Send request"
+          minLength={20}
+          maxLength={1000}
+          busy={busy}
+          error={error}
+          onSubmit={send}
+          onClose={() => {
+            setOpen(false);
+            setError('');
+          }}
+        />
+      )}
+    </section>
   );
 }

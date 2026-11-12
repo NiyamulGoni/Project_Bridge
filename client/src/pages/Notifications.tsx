@@ -6,7 +6,10 @@ import { Alert } from '../components/Alert';
 /** Where a notice leads, if anywhere the user can open. */
 function linkFor(n: AppNotification): string | null {
   if (n.targetType === 'Project' && n.targetId) return `/projects/${n.targetId}`;
-  if (n.targetType === 'ContactRequest' || n.targetType === 'Conversation') return '/requests';
+  if (n.targetType === 'ProjectWorkspace' && n.targetId) return `/projects/${n.targetId}/manage`;
+  if (n.targetType === 'Conversation' && n.targetId) return `/messages/${n.targetId}`;
+  if (n.targetType === 'ContactRequest') return '/requests';
+  if (n.eventType === 'ROLE_CHANGED' || n.eventType === 'ACCESS_CHANGED' || n.eventType === 'ROLE_REQUEST_REJECTED') return '/account';
   if (n.eventType === 'TEAM_INVITE') return '/my-projects';
   return null;
 }

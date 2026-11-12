@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import type { PaidOffer, Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
 import { config } from '../../config.js';
@@ -6,7 +6,9 @@ import { HttpError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
 import { param } from '../../lib/params.js';
 import { requireAuth } from '../../middleware/auth.js';
+import { toOfferView, VISIBLE_OFFER } from '../offers/service.js';
 import { signScreenshots } from '../projects/media.js';
+import { shareInfo } from '../sharing/service.js';
 import { admitGuestToProject, getGuestSession, guestCardLimit, guestFeedPage, guestLimitReached } from './guestLimit.js';
 import { COMMENTS_SHOWN, toCommentView, type CommentSource } from '../engagement/service.js';
 import { cardInclude, ELIGIBLE, ENGAGEMENT_COUNTS, FIELDS_BY_TIER, NEWEST_FIRST, showsDemo, toCard, toDetail, viewerTier } from './visibility.js';
@@ -168,6 +170,11 @@ discoveryRouter.get('/tags', requireAuth, async (_req, res) => {
   res.json({ items });
 });
 
+/** FR12: what a share link shows. The same for everyone, and free of the guest card budget. */
+discoveryRouter.get('/:id/share', async (req, res) => {
+  res.json(await shareInfo(param(req, 'id')));
+});
+
 /**
  * FR07: the role-specific project view. Direct requests get exactly the same rules as
  * clicking a card: unpublished, hidden or deleted projects are 404 and fields follow the tier.
@@ -202,16 +209,17 @@ discoveryRouter.get('/:id', async (req, res) => {
             comments: { orderBy: [{ createdAt: 'desc' as const }, { id: 'desc' as const }], take: COMMENTS_SHOWN, include: { author: { select: { id: true, name: true } } } },
           }
         : {}),
+      ...(FIELDS_BY_TIER[tier].offers ? { offers: { where: VISIBLE_OFFER, orderBy: { createdAt: 'desc' as const } } } : {}),
     },
   });
   if (!project) throw new HttpError(404, 'NOT_FOUND', 'Project not found.');
 
   const screenshots = showsDemo(project, tier) ? await signScreenshots(project.media) : [];
   // The include above only adds these for the engagement tier, which TypeScript cannot follow.
-  const loaded = project as unknown as { likes?: Array<{ userId: string }>; comments?: CommentSource[] };
+  const loaded = project as unknown as { likes?: Array<{ userId: string }>; comments?: CommentSource[]; offers?: PaidOffer[] };
   const engagement =
     loaded.comments && loaded.likes
       ? { likedByMe: loaded.likes.length > 0, comments: loaded.comments.map((c) => toCommentView(c, req.user!.id)) }
       : undefined;
-  res.json({ tier, project: toDetail(project, tier, screenshots, engagement) });
+  res.json({ tier, project: toDetail(project, tier, screenshots, engagement, loaded.offers?.map(toOfferView)) });
 });

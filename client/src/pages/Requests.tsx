@@ -109,7 +109,11 @@ export function Requests() {
               <time className="muted small" dateTime={r.createdAt}>
                 Sent {new Date(r.createdAt).toLocaleString()}
               </time>
-              {r.status === 'ACCEPTED' && <p className="small muted">Conversation opened. Messaging will appear here in the next release.</p>}
+              {r.status === 'ACCEPTED' && r.conversationId && (
+                <Link to={`/messages/${r.conversationId}`} className="btn btn-primary btn-sm" style={{ alignSelf: 'flex-start' }}>
+                  Open conversation
+                </Link>
+              )}
               {r.status === 'PENDING' && (
                 <div className="row">
                   {box === 'incoming' ? (

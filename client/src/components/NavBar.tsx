@@ -44,6 +44,8 @@ export function NavBar() {
           </NavLink>
           {user && user.role !== 'ADMIN' && <NavLink to="/my-projects">My projects</NavLink>}
           {user && user.role !== 'ADMIN' && <NavLink to="/requests">Requests</NavLink>}
+          {user && user.role !== 'ADMIN' && <NavLink to="/messages">Messages</NavLink>}
+          {user?.role === 'PROFESSIONAL' && <NavLink to="/offers">Offers</NavLink>}
           {user?.role === 'ADMIN' && <NavLink to="/admin">Admin</NavLink>}
         </nav>
         <div className="nav-actions">

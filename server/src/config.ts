@@ -33,6 +33,7 @@ export const config = {
   reportRateLimit: int('REPORT_RATE_LIMIT', 10),
   commentRateLimit: int('COMMENT_RATE_LIMIT', 30),
   contactRateLimit: int('CONTACT_RATE_LIMIT', 10),
+  messageRateLimit: int('MESSAGE_RATE_LIMIT', 60),
   guestCardLimit: 20,
   feedPageSize: 10,
   /** Screenshots and cover images (FR02): optional, stored in Supabase Storage. */

@@ -6,8 +6,7 @@ import { Alert } from '../components/Alert';
 import { CardSkeleton } from '../components/CardSkeleton';
 import { GuestCapPrompt } from '../components/GuestCapPrompt';
 import { ProjectCard } from '../components/ProjectCard';
-import { SearchBar } from '../components/SearchBar';
-import { TagSidebar } from '../components/TagSidebar';
+import { FilterSidebar } from '../components/FilterSidebar';
 
 type SortOption = 'default' | 'recent' | 'interaction';
 const SORTS: Array<{ value: SortOption; label: string }> = [
@@ -41,6 +40,8 @@ export function Explore() {
   const [capLimit, setCapLimit] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Open beside the cards on a wide screen; closed on a phone, so projects come first.
+  const [filtersOpen, setFiltersOpen] = useState(() => window.matchMedia('(min-width: 861px)').matches);
 
   const loadPage = useCallback(
     async (next: number, replace: boolean) => {
@@ -99,19 +100,28 @@ export function Explore() {
         {tier && <span className="badge badge-accent">{TIER_NOTES[tier]}</span>}
       </section>
 
-      {user ? (
-        <SearchBar q={q} tags={tags} onSearch={search} />
-      ) : (
-        !authLoading && (
-          <p className="muted search-hint">
-            <Link to="/login">Sign in</Link> to search projects by name and tags.
-          </p>
-        )
-      )}
-
-      <div className={user ? 'explore-layout' : undefined}>
-        {user && <TagSidebar tags={tags} onChange={(next) => search(q, next)} />}
+      <div className="explore-layout">
+        <aside className="explore-side">
+          {user ? (
+            <details className="filters-toggle" open={filtersOpen} onToggle={(e) => setFiltersOpen(e.currentTarget.open)}>
+              <summary className="btn btn-secondary">Filters{tags.length + (q ? 1 : 0) > 0 ? ` (${tags.length + (q ? 1 : 0)})` : ''}</summary>
+              <FilterSidebar q={q} tags={tags} onSearch={search} />
+            </details>
+          ) : (
+            !authLoading && (
+              <div className="filters card">
+                <div className="filters-head">
+                  <h2>Filters</h2>
+                </div>
+                <p className="muted small filters-group">
+                  <Link to="/login">Sign in</Link> to search projects by name and filter them by tags.
+                </p>
+              </div>
+            )
+          )}
+        </aside>
         <div className="explore-main">
+
       {searching && total !== null && !firstLoad && (
         <div className="row space-between results-bar" role="status">
           <span>

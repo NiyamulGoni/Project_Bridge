@@ -85,6 +85,7 @@ export interface ProjectDetail extends ProjectCard {
   /** Professional tier only. */
   likedByMe?: boolean;
   comments?: ProjectComment[];
+  offers?: PaidOffer[];
 }
 
 export interface ProjectContent {
@@ -199,6 +200,39 @@ export interface AdminReport {
   reporter: { name: string };
   createdAt: string;
   reviewedAt: string | null;
+}
+
+export interface PaidOffer {
+  id: string;
+  title: string;
+  skills: string[];
+  type: string;
+  compensation: string;
+  currency: string;
+  applicationRoute: string;
+  status: 'OPEN' | 'CLOSED';
+  createdAt: string;
+  paymentNotice: string;
+}
+export interface MyOffer extends PaidOffer {
+  reviewStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
+  reviewNote: string | null;
+  project: { id: string; title: string };
+}
+export const OFFER_TYPE_LABELS: Record<string, string> = { FIXED: 'Fixed price', HOURLY: 'Hourly', STIPEND: 'Stipend', EQUITY: 'Equity' };
+
+export interface ConversationSummary {
+  id: string;
+  with: { id: string; name: string } | null;
+  project: { id: string; title: string } | null;
+  lastMessage: { preview: string; mine: boolean; createdAt: string } | null;
+  updatedAt: string;
+}
+export interface ChatMessage {
+  id: string;
+  body: string | null;
+  mine: boolean;
+  createdAt: string;
 }
 
 export class ApiError extends Error {

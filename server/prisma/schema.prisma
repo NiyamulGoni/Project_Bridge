@@ -40,6 +40,9 @@ model User {
   sentRequests     ContactRequest[]          @relation("RequestSender")
   receivedRequests ContactRequest[]          @relation("RequestRecipient")
   conversations    ConversationParticipant[]
+  messages         Message[]
+  offers           PaidOffer[]
+  roleRequests     RoleRequest[]
 }
 
 /// Server-side sessions so suspension/ban invalidates access on the next request (NFR-S3).
@@ -148,6 +151,8 @@ model Project {
   publishedAt         DateTime?
   hiddenAt            DateTime?
   deletedAt           DateTime?
+  /// Set when an Admin removes the project (FR14); the reason is in the audit log.
+  removedAt           DateTime?
   /// Seeded demo data is labelled separately from genuine pilot projects.
   isSynthetic         Boolean   @default(false)
   createdAt           DateTime  @default(now())
@@ -161,6 +166,7 @@ model Project {
   likes           ProjectLike[]
   comments        Comment[]
   contactRequests ContactRequest[]
+  offers          PaidOffer[]
 
   @@index([status, createdAt])
   @@index([status, publishedAt])
@@ -290,21 +296,24 @@ model Comment {
 
 /// A request to start a private conversation (FR10). Sent about a project (to its owner) or to a user.
 model ContactRequest {
-  id           String    @id @default(cuid())
+  id           String     @id @default(cuid())
   senderId     String
-  sender       User      @relation("RequestSender", fields: [senderId], references: [id], onDelete: Cascade)
+  sender       User       @relation("RequestSender", fields: [senderId], references: [id], onDelete: Cascade)
   recipientId  String
-  recipient    User      @relation("RequestRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  recipient    User       @relation("RequestRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
   projectId    String?
-  project      Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  project      Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  /// Set when the request answers a paid offer (FR11).
+  offerId      String?
+  offer        PaidOffer? @relation(fields: [offerId], references: [id], onDelete: SetNull)
   /// Encrypted with lib/crypto.
   introduction String
   /// PENDING | ACCEPTED | DECLINED | WITHDRAWN
-  status       String    @default("PENDING")
+  status       String     @default("PENDING")
   /// sender:recipient:project while PENDING, null afterwards, so only one pending request can exist.
-  pendingKey   String?   @unique
+  pendingKey   String?    @unique
   respondedAt  DateTime?
-  createdAt    DateTime  @default(now())
+  createdAt    DateTime   @default(now())
 
   conversation Conversation?
 
@@ -321,6 +330,7 @@ model Conversation {
   createdAt        DateTime        @default(now())
 
   participants ConversationParticipant[]
+  messages     Message[]
 }
 
 model ConversationParticipant {
@@ -344,4 +354,65 @@ model SearchLog {
   createdAt DateTime @default(now())
 
   @@index([createdAt, term])
+}
+
+/// One private message (FR10). Only the two participants can read it.
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  /// Encrypted with lib/crypto.
+  body           String
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+/// A paid contribution offer on a project (FR11). The platform processes no payments.
+model PaidOffer {
+  id               String   @id @default(cuid())
+  projectId        String
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  authorId         String
+  author           User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  title            String
+  skills           String[]
+  /// FIXED | HOURLY | STIPEND | EQUITY
+  type             String
+  compensation     String
+  currency         String
+  /// How to apply: the terms a candidate needs before making contact.
+  applicationRoute String
+  /// OPEN | CLOSED
+  status           String   @default("OPEN")
+  /// PENDING | APPROVED | REJECTED
+  reviewStatus     String   @default("PENDING")
+  reviewNote       String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  contactRequests ContactRequest[]
+
+  @@index([projectId, reviewStatus, status])
+  @@index([reviewStatus, createdAt])
+}
+
+/// An Uploader asking to become a Professional (FR15). Only an Admin decides.
+model RoleRequest {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason       String
+  /// PENDING | APPROVED | REJECTED
+  status       String    @default("PENDING")
+  /// The user id while PENDING, null afterwards, so only one pending request can exist.
+  pendingKey   String?   @unique
+  decisionNote String?
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([status, createdAt])
 }

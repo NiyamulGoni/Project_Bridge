@@ -32,6 +32,13 @@ const agentFor = async (role: string, status = 'ACTIVE') => {
   return { user, agent: await signedInAgent(user.email) };
 };
 const report = (targetType: string, targetId: string, reason = REASON) => ({ targetType, targetId, reason });
+/** Approved offers on a published project, which a Professional can see and so can report. */
+async function offers(count: number) {
+  const author = await createUser({ role: 'PROFESSIONAL' });
+  const project = await createProject(author.id);
+  const terms = { projectId: project.id, authorId: author.id, skills: ['qa'], type: 'FIXED', compensation: '100', currency: 'BDT', applicationRoute: 'Write to me through the platform.', reviewStatus: 'APPROVED' };
+  return Promise.all(Array.from({ length: count }, (_, i) => prisma.paidOffer.create({ data: { ...terms, title: `Offer ${i}` } })));
+}
 
 describe('Filing a report', () => {
   it('stores the reason encrypted, and changes nothing about the target', async () => {
@@ -56,7 +63,8 @@ describe('Filing a report', () => {
     const { user, agent } = await agentFor('PROFESSIONAL');
     const comment = await prisma.comment.create({ data: { projectId: project.id, authorId: other.id, body: 'Nice work.' } });
     const conversation = await prisma.conversation.create({ data: { participants: { create: [{ userId: user.id }, { userId: other.id }] } } });
-    const targets = [['PROJECT', project.id], ['USER', other.id], ['COMMENT', comment.id], ['OFFER', 'o1'], ['CONVERSATION', conversation.id]];
+    const [offer] = await offers(1);
+    const targets = [['PROJECT', project.id], ['USER', other.id], ['COMMENT', comment.id], ['OFFER', offer.id], ['CONVERSATION', conversation.id]];
     for (const [type, id] of targets) expect((await agent.post('/api/reports').send(report(type, id))).status).toBe(201);
   });
 
@@ -79,6 +87,8 @@ describe('Filing a report', () => {
     expect((await agent.post('/api/reports').send(report('USER', 'no-such-user'))).status).toBe(404);
     expect((await agent.post('/api/reports').send(report('USER', user.id))).status).toBe(400);
     expect((await agent.post('/api/reports').send(report('COMMENT', 'no-such-comment'))).status).toBe(404);
+    // Offers are shown to Professionals only, so an Uploader cannot report one, real or not.
+    expect((await agent.post('/api/reports').send(report('OFFER', (await offers(1))[0].id))).status).toBe(404);
     const theirs = await prisma.conversation.create({ data: { participants: { create: [{ userId: owner.id }] } } });
     expect((await agent.post('/api/reports').send(report('CONVERSATION', theirs.id))).status).toBe(404);
     expect(await prisma.report.count()).toBe(0);
@@ -95,11 +105,12 @@ describe('Filing a report', () => {
   });
 
   it('is rate limited per user', async () => {
-    const { agent } = await agentFor('UPLOADER');
-    for (let i = 0; i < 10; i++) expect((await agent.post('/api/reports').send(report('OFFER', `o${i}`))).status).toBe(201);
-    const blocked = await agent.post('/api/reports').send(report('OFFER', 'one-too-many'));
+    const { agent } = await agentFor('PROFESSIONAL');
+    const targets = await offers(11);
+    for (let i = 0; i < 10; i++) expect((await agent.post('/api/reports').send(report('OFFER', targets[i].id))).status).toBe(201);
+    const blocked = await agent.post('/api/reports').send(report('OFFER', targets[10].id));
     expect(blocked.status).toBe(429);
-    expect((await (await agentFor('UPLOADER')).agent.post('/api/reports').send(report('OFFER', 'someone-else'))).status).toBe(201);
+    expect((await (await agentFor('PROFESSIONAL')).agent.post('/api/reports').send(report('OFFER', targets[10].id))).status).toBe(201);
   });
 });
 

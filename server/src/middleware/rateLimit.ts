@@ -58,6 +58,16 @@ export const contactLimiter = rateLimit({
   message: message('Too many contact requests. Please wait a few minutes and try again.'),
 });
 
+/** Per signed-in user, against message flooding. */
+export const messageLimiter = rateLimit({
+  windowMs: WINDOW_MS,
+  limit: config.messageRateLimit,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user!.id,
+  message: message('Too many messages. Please wait a few minutes and try again.'),
+});
+
 /** Registration, resend and password-reset requests, which trigger emails. */
 export const authEmailLimiter = rateLimit({
   windowMs: WINDOW_MS,

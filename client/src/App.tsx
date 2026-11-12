@@ -6,8 +6,10 @@ import { AdminArea } from './pages/AdminArea';
 import { Explore } from './pages/Explore';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { Login } from './pages/Login';
+import { Messages } from './pages/Messages';
 import { MyProjects } from './pages/MyProjects';
 import { NotFound } from './pages/NotFound';
+import { Offers } from './pages/Offers';
 import { Notifications } from './pages/Notifications';
 import { ProjectEditor } from './pages/ProjectEditor';
 import { ProjectManage } from './pages/ProjectManage';
@@ -44,6 +46,25 @@ export function App() {
             element={
               <RequireAuth>
                 <Notifications />
+              </RequireAuth>
+            }
+          />
+          {['/messages', '/messages/:id'].map((path) => (
+            <Route
+              key={path}
+              path={path}
+              element={
+                <RequireAuth>
+                  <Messages />
+                </RequireAuth>
+              }
+            />
+          ))}
+          <Route
+            path="/offers"
+            element={
+              <RequireAuth>
+                <Offers />
               </RequireAuth>
             }
           />

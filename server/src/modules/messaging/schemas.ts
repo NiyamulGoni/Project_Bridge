@@ -7,14 +7,16 @@ export const createRequestSchema = z
   .object({
     projectId: id.optional(),
     userId: id.optional(),
+    /** Answering a paid offer: the request goes to the offer's author. */
+    offerId: id.optional(),
     introduction: z
       .string({ required_error: 'Introduce yourself.' })
       .trim()
       .min(10, 'Introduce yourself in at least 10 characters.')
       .max(1000, 'Keep the introduction under 1000 characters.'),
   })
-  .refine((body) => (body.projectId === undefined) !== (body.userId === undefined), {
-    message: 'Choose either a project or a person to contact.',
+  .refine((body) => [body.projectId, body.userId, body.offerId].filter((v) => v !== undefined).length === 1, {
+    message: 'Choose one thing to contact about: a project, a person or an offer.',
   });
 
 export const listRequestsQuery = z.object({

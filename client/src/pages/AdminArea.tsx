@@ -2,14 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { api, ApiError } from '../api';
 import { useAuth } from '../auth/AuthContext';
+import { OfferQueue, RemovedProjects, RoleRequestQueue, UserAccess } from '../components/AdminModeration';
 import { ReportQueue } from '../components/ReportQueue';
 import { ReviewQueue } from '../components/ReviewQueue';
-
-const UPCOMING = [
-  { id: 'FR14', title: 'Remove violating projects', text: 'Act on confirmed policy or copyright reports.' },
-  { id: 'FR15', title: 'Change account roles', text: 'Promote approved Uploaders to Professional.' },
-  { id: 'FR16', title: 'Control Professional access', text: 'Restrict, suspend, ban or restore accounts.' },
-];
 
 /**
  * Always asks the server, even when the UI thinks the user is not an Admin.
@@ -75,22 +70,10 @@ export function AdminArea() {
 
       {result?.ok && <ReportQueue />}
 
-      {result?.ok && (
-        <section className="stack" aria-labelledby="upcoming-title">
-          <h2 id="upcoming-title">Coming in later releases</h2>
-          <ul className="todo-list">
-            {UPCOMING.map((item) => (
-              <li key={item.id}>
-                <span className="badge" style={{ alignSelf: 'flex-start' }}>
-                  {item.id}
-                </span>
-                <strong>{item.title}</strong>
-                <span>{item.text}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {result?.ok && <OfferQueue />}
+      {result?.ok && <RoleRequestQueue />}
+      {result?.ok && <RemovedProjects />}
+      {result?.ok && <UserAccess />}
     </main>
   );
 }
