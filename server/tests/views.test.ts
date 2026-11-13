@@ -279,15 +279,18 @@ const GET_ROUTES: GetRoute[] = [
   { router: 'app', path: '/api/health', urls: () => ['/api/health'], statuses: everyone(200) },
   { router: 'accounts', path: '/config', urls: () => ['/api/auth/config'], statuses: everyone(200) },
   { router: 'accounts', path: '/me', urls: () => ['/api/auth/me'], statuses: signedIn, allow: ['user.email'] },
+  { router: 'accounts', path: '/me/profile', urls: () => ['/api/auth/me/profile'], statuses: signedIn },
   { router: 'projects', path: '/mine', urls: () => ['/api/projects/mine'], statuses: signedIn },
   { router: 'projects', path: '/invites', urls: () => ['/api/projects/invites'], statuses: signedIn },
   { router: 'projects', path: '/:id/workspace', urls: () => [`/api/projects/${live.id}/workspace`], statuses: teamOnly },
   { router: 'projects', path: '/:id/preview', urls: () => [`/api/projects/${live.id}/preview`], statuses: teamOnly },
   { router: 'discovery', path: '/feed', urls: () => ['/api/projects/feed', '/api/projects/feed?page=2'], statuses: everyone(200), isPublic: true },
-  { router: 'discovery', path: '/search', urls: () => ['/api/projects/search', '/api/projects/search?q=monitor&tags=iot'], statuses: signedIn, isPublic: true },
-  { router: 'discovery', path: '/tags', urls: () => ['/api/projects/tags'], statuses: signedIn, isPublic: true },
+  { router: 'discovery', path: '/search', urls: () => ['/api/projects/search', '/api/projects/search?q=monitor&tags=iot'], statuses: everyone(200), isPublic: true },
+  { router: 'discovery', path: '/tags', urls: () => ['/api/projects/tags'], statuses: everyone(200), isPublic: true },
+  { router: 'discovery', path: '/suggest', urls: () => ['/api/projects/suggest', '/api/projects/suggest?q=pump'], statuses: signedIn },
   { router: 'discovery', path: '/:id', urls: () => [`/api/projects/${live.id}`, `/api/projects/${liveDemo.id}`], statuses: everyone(200), isPublic: true },
   { router: 'discovery', path: '/:id/share', urls: () => [`/api/projects/${live.id}/share`], statuses: everyone(200), isPublic: true },
+  { router: 'discovery', path: '/:id/share-links', urls: () => [`/api/projects/${live.id}/share-links`], statuses: everyone(403, { guest: 401, professional: 200, owner: 200, editor: 200 }), isPublic: true },
   { router: 'share', path: '/:id', urls: () => [`/p/${live.id}`], statuses: everyone(200), isPublic: true },
   { router: 'messaging', path: '/conversations', urls: () => ['/api/messaging/conversations'], statuses: signedIn },
   { router: 'messaging', path: '/conversations/:id/messages', urls: () => [`/api/messaging/conversations/${fixtureConversation.id}/messages`], statuses: everyone(404, { guest: 401, uploader: 200, professional: 200 }) },
@@ -426,13 +429,15 @@ describe('Exact field lists', () => {
   });
 
   it.each([
+    ['guest', CARD],
     ['uploader', UPLOADER_CARD],
     ['professional', FULL_CARD],
     ['admin', FULL_CARD],
   ] as [Viewer, string[]][])('search card and page for %s', async (viewer, expected) => {
     const res = await agents[viewer].get('/api/projects/search?q=pump');
     expect(fields(cardOf(res, live.id))).toEqual(sorted(expected));
-    expect(fields(res.body)).toEqual(['hasMore', 'items', 'page', 'pageSize', 'query', 'tier', 'total']);
+    const envelope = ['hasMore', 'items', 'page', 'pageSize', 'query', 'tier', 'total'];
+    expect(fields(res.body)).toEqual(sorted(viewer === 'guest' ? [...envelope, 'guest'] : envelope));
   });
 
   it.each([

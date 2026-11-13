@@ -16,6 +16,9 @@ Gates: **Public** needs no sign-in. **requireAuth** needs any signed-in account 
 | POST | `/api/auth/google` | Public | None: public, rate limited | accounts, hardening |
 | POST | `/api/auth/logout` | Public | None: public | accounts, hardening |
 | GET | `/api/auth/me` | requireAuth | Own account only | accounts, hardening |
+| GET | `/api/auth/me/profile` | requireAuth | Own account only | profile, security, views |
+| POST | `/api/auth/me/cover` | requirePermission(edit) | Own account only | profile, security, views |
+| DELETE | `/api/auth/me/cover` | requirePermission(edit) | Own account only | profile, security, views |
 | POST | `/api/auth/forgot-password` | Public | None: public, rate limited | accounts, hardening |
 | POST | `/api/auth/reset-password` | Public | None: public, rate limited | accounts, hardening |
 
@@ -52,9 +55,11 @@ Gates: **Public** needs no sign-in. **requireAuth** needs any signed-in account 
 | Method | Route | Permission | Record-level check | Tests |
 |---|---|---|---|---|
 | GET | `/api/projects/feed` | Public | Published only; fields by role (FIELDS_BY_TIER); Guest 20-project budget | views, feed, search, projectView |
-| GET | `/api/projects/search` | requireAuth | Published only; fields by role (FIELDS_BY_TIER); Guest 20-project budget | views, feed, search, projectView |
-| GET | `/api/projects/tags` | requireAuth | Published only; fields by role (FIELDS_BY_TIER); Guest 20-project budget | views, feed, search, projectView |
+| GET | `/api/projects/search` | Public | Published only; fields by role (FIELDS_BY_TIER); Guest 20-project budget | views, feed, search, projectView |
+| GET | `/api/projects/suggest` | requireAuth | Published only; fields by role (FIELDS_BY_TIER); Guest 20-project budget | views, feed, search, projectView |
+| GET | `/api/projects/tags` | Public | Published only; fields by role (FIELDS_BY_TIER); Guest 20-project budget | views, feed, search, projectView |
 | GET | `/api/projects/:id/share` | Public | Published only; Guest card fields | sharing, views |
+| GET | `/api/projects/:id/share-links` | requireAuth | Published only; fields by role (FIELDS_BY_TIER); Guest 20-project budget | views, feed, search, projectView |
 | GET | `/api/projects/:id` | Public | Published only; fields by role (FIELDS_BY_TIER); Guest 20-project budget | views, feed, search, projectView |
 
 ## Likes and comments
@@ -144,7 +149,7 @@ Gates: **Public** needs no sign-in. **requireAuth** needs any signed-in account 
 |---|---|---|---|---|
 | GET | `/p/:id` | Public | Published only; Guest card fields, HTML-escaped | sharing |
 
-83 routes in all.
+88 routes in all.
 
 ## Checked and left as they are
 

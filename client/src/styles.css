@@ -708,7 +708,122 @@ code {
   background: var(--info);
 }
 
+/* ---------- Password fields ---------- */
+.password-wrap {
+  position: relative;
+}
+.password-wrap .input {
+  padding-right: 46px;
+}
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.password-toggle:hover {
+  color: var(--text);
+  background: var(--surface-muted);
+}
+.password-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+.password-rules {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 2px 12px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.password-rules li.ok {
+  color: var(--success);
+}
+
 /* ---------- Account ---------- */
+.profile-card {
+  overflow: hidden;
+}
+.profile-cover {
+  position: relative;
+  height: 180px;
+  background: linear-gradient(120deg, var(--navy), var(--accent));
+  background-size: cover;
+  background-position: center;
+}
+.profile-cover-actions {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.profile-cover-error {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 12px;
+}
+.profile-cover-error .alert {
+  margin: 0;
+}
+.stat-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+.stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.stat-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.stat-note {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+@media (max-width: 480px) {
+  .profile-cover {
+    height: 130px;
+  }
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 .profile {
   display: flex;
   align-items: center;
@@ -1097,6 +1212,16 @@ fieldset {
   outline: none;
 }
 /* Interactive parts of the card stay above the stretched link. */
+.chip-link {
+  position: relative;
+  z-index: 2;
+  text-decoration: none;
+  display: inline-block;
+}
+.chip-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .project-overview,
 .project-footer {
   position: relative;
@@ -1353,6 +1478,48 @@ fieldset {
   gap: 2px;
 }
 
+/* ---------- Search suggestions ---------- */
+.suggest-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.suggest-wrap .input {
+  width: 100%;
+}
+.suggest-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.suggest-head {
+  padding: 6px 10px 2px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.suggest-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.suggest-item:hover,
+.suggest-item.active {
+  background: var(--accent-soft);
+}
+.suggest-kind {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
 /* ---------- Messages (FR10) ---------- */
 .sr-only {
   position: absolute;
@@ -1644,6 +1811,14 @@ fieldset.filters-group > legend + * {
   .filters-toggle:not([open]) > .filters {
     display: flex;
   }
+}
+
+/* ---------- Social share links (FR12) ---------- */
+.social-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 /* ---------- Project bulletin: stage, accomplished pie, milestones ---------- */

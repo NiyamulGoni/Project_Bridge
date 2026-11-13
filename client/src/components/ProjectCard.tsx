@@ -44,8 +44,11 @@ export function ProjectCard({ project }: { project: Card }) {
         {project.tags.length > 0 && (
           <ul className="chips" aria-label="Tags">
             {project.tags.map((tag) => (
-              <li key={tag} className="chip">
-                #{tag}
+              <li key={tag} className="chip-item">
+                {/* Everyone can search by tag; the chip runs that search at once. */}
+                <Link to={`/?tags=${encodeURIComponent(tag)}`} className="chip chip-link">
+                  {tag}
+                </Link>
               </li>
             ))}
           </ul>

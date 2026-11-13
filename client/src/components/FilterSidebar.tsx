@@ -1,17 +1,32 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useNavigate } from 'react-router';
 import { api } from '../api';
+
+interface Suggestion {
+  kind: 'search' | 'project';
+  text: string;
+  id?: string;
+  score: number;
+}
 
 interface Props {
   q: string;
   tags: string[];
   onSearch: (q: string, tags: string[]) => void;
+  /** Live suggestions are for signed-in users; guests search without them. */
+  suggestions?: boolean;
 }
 
 const MAX_TAGS = 8;
 
 /** FR06: the Explore filters, in a sidebar. Project-name text plus tags; every selected tag must match. */
-export function FilterSidebar({ q, tags, onSearch }: Props) {
+export function FilterSidebar({ q, tags, onSearch, suggestions = false }: Props) {
+  const navigate = useNavigate();
   const [text, setText] = useState(q);
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<Suggestion[]>([]);
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const box = useRef<HTMLDivElement>(null);
   const [available, setAvailable] = useState<Array<{ tag: string; count: number }>>([]);
   const [showAll, setShowAll] = useState(false);
 
@@ -23,8 +38,57 @@ export function FilterSidebar({ q, tags, onSearch }: Props) {
       .catch(() => setAvailable([]));
   }, []);
 
+  // Debounced suggestions (last week's searches and reactions) while the box is open; stale answers are ignored.
+  useEffect(() => {
+    if (!open || !suggestions) return;
+    let stale = false;
+    const timer = setTimeout(() => {
+      api<{ items: Suggestion[] }>(`/projects/suggest?${new URLSearchParams({ q: text.trim() })}`)
+        .then((res) => {
+          if (!stale) {
+            setItems(res.items);
+            setActiveIdx(-1);
+          }
+        })
+        .catch(() => !stale && setItems([]));
+    }, 150);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [text, open, suggestions]);
+
+  useEffect(() => {
+    const close = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+
+  function pick(s: Suggestion) {
+    setOpen(false);
+    if (s.kind === 'project' && s.id) navigate(`/projects/${s.id}`);
+    else {
+      setText(s.text);
+      onSearch(s.text, tags);
+    }
+  }
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape') setOpen(false);
+    else if (open && items.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      setActiveIdx((i) => (e.key === 'ArrowDown' ? (i + 1) % items.length : (i <= 0 ? items.length : i) - 1));
+    } else if (e.key === 'Enter' && activeIdx >= 0 && items[activeIdx]) {
+      e.preventDefault();
+      pick(items[activeIdx]);
+    }
+  }
+
   function submit(e: FormEvent) {
     e.preventDefault();
+    setOpen(false);
     onSearch(text.trim(), tags);
   }
 
@@ -53,7 +117,52 @@ export function FilterSidebar({ q, tags, onSearch }: Props) {
         <label htmlFor="search-q" className="filters-label">
           Project name
         </label>
-        <input id="search-q" className="input" type="search" placeholder="Search by name…" value={text} maxLength={100} onChange={(e) => setText(e.target.value)} />
+        <div className="suggest-wrap" ref={box}>
+          <input
+            id="search-q"
+            className="input"
+            type="search"
+            placeholder="Search by name…"
+            value={text}
+            maxLength={100}
+            autoComplete="off"
+            role="combobox"
+            aria-expanded={open && items.length > 0}
+            aria-controls="search-suggestions"
+            aria-activedescendant={activeIdx >= 0 ? `suggest-${activeIdx}` : undefined}
+            onChange={(e) => {
+              setText(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={onKeyDown}
+          />
+          {open && items.length > 0 && (
+            <ul id="search-suggestions" className="suggest-list card" role="listbox" aria-label={text.trim() ? 'Suggestions' : 'Trending this week'}>
+              {!text.trim() && (
+                <li className="suggest-head" role="presentation">
+                  Trending this week
+                </li>
+              )}
+              {items.map((s, i) => (
+                <li
+                  key={`${s.kind}-${s.id ?? s.text}`}
+                  id={`suggest-${i}`}
+                  role="option"
+                  aria-selected={i === activeIdx}
+                  className={`suggest-item${i === activeIdx ? ' active' : ''}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    pick(s);
+                  }}
+                >
+                  <span>{s.text}</span>
+                  <span className="suggest-kind">{s.kind === 'project' ? 'Project' : 'Search'}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         <button type="submit" className="btn btn-primary btn-sm btn-block">
           Search
         </button>
@@ -72,7 +181,7 @@ export function FilterSidebar({ q, tags, onSearch }: Props) {
                 <li key={tag}>
                   <label className={`filters-tag${on ? ' on' : ''}`}>
                     <input type="checkbox" checked={on} onChange={() => toggle(tag)} disabled={!on && tags.length >= MAX_TAGS} />
-                    <span className="filters-tag-name">#{tag}</span>
+                    <span className="filters-tag-name">{tag}</span>
                     {count !== null && <span className="filters-tag-count">{count}</span>}
                   </label>
                 </li>

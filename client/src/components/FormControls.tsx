@@ -146,7 +146,7 @@ export function TagInput({ label, tags, onChange, max = 8, error, hint: customHi
       <div className={`tag-input input${error ? ' invalid' : ''}`}>
         {tags.map((tag) => (
           <span key={tag} className="chip chip-removable">
-            #{tag}
+            {tag}
             {!disabled && (
               <button type="button" aria-label={`Remove tag ${tag}`} onClick={() => onChange(tags.filter((t) => t !== tag))}>
                 ×

@@ -4,7 +4,8 @@ import { api, ApiError } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import { Alert } from '../components/Alert';
 import { AuthLayout } from '../components/AuthLayout';
-import { FormField } from '../components/FormField';
+import { FormField, PasswordChecklist } from '../components/FormField';
+import { passwordProblem } from '../passwordRules';
 
 export function ResetPassword() {
   const [params] = useSearchParams();
@@ -20,6 +21,11 @@ export function ResetPassword() {
     e.preventDefault();
     setErrors({});
     setMessage(null);
+    const weak = passwordProblem(password);
+    if (weak) {
+      setErrors({ password: weak });
+      return;
+    }
     if (password !== confirm) {
       setErrors({ confirm: 'Passwords do not match.' });
       return;
@@ -71,12 +77,14 @@ export function ResetPassword() {
           label="New password"
           type="password"
           autoComplete="new-password"
-          hint="At least 8 characters."
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           error={errors.password}
+          maxLength={128}
           required
-        />
+        >
+          <PasswordChecklist value={password} />
+        </FormField>
         <FormField
           label="Confirm new password"
           type="password"

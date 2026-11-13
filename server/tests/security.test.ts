@@ -51,6 +51,8 @@ const PUBLIC = new Set([
   'post /api/auth/forgot-password',
   'post /api/auth/reset-password',
   'get /api/projects/feed',
+  'get /api/projects/search',
+  'get /api/projects/tags',
   'get /api/projects/:id',
   'get /api/projects/:id/share',
   'get /p/:id',

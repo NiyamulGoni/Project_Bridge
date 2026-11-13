@@ -19,6 +19,36 @@ export async function shareInfo(id: string) {
   };
 }
 
+/**
+ * FR12: ready-made social media share links for one project. Only a Professional, or the project's
+ * own owner or accepted team member, gets them; everyone else is refused here, on the server.
+ * The links point at the public /p/:id page, so what gets shared is still only the Guest card.
+ */
+export async function socialShareLinks(viewer: { id: string; role: string }, id: string) {
+  const project = await prisma.project.findFirst({
+    where: { ...ELIGIBLE, id },
+    select: { id: true, title: true, ownerId: true, members: { where: { userId: viewer.id, status: 'ACCEPTED' }, select: { userId: true } } },
+  });
+  if (!project) throw new HttpError(404, 'NOT_FOUND', 'Project not found.');
+  const onTeam = project.ownerId === viewer.id || project.members.length > 0;
+  if (viewer.role !== 'PROFESSIONAL' && !onTeam) {
+    throw new HttpError(403, 'FORBIDDEN', 'Only Professionals and this project’s own team can share it on social media.');
+  }
+
+  const url = `${config.appUrl}/p/${project.id}`;
+  const u = encodeURIComponent(url);
+  const text = encodeURIComponent(`${project.title} on ProjectBridge`);
+  return {
+    url,
+    links: [
+      { service: 'linkedin', label: 'LinkedIn', href: `https://www.linkedin.com/sharing/share-offsite/?url=${u}` },
+      { service: 'facebook', label: 'Facebook', href: `https://www.facebook.com/sharer/sharer.php?u=${u}` },
+      { service: 'x', label: 'X', href: `https://twitter.com/intent/tweet?url=${u}&text=${text}` },
+      { service: 'whatsapp', label: 'WhatsApp', href: `https://wa.me/?text=${text}%20${u}` },
+    ],
+  };
+}
+
 export function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }

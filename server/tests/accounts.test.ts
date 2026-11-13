@@ -58,6 +58,51 @@ describe('AT01.1 Registration', () => {
     expect(Object.keys(res.body.error.fields).sort()).toEqual(['email', 'name', 'password']);
   });
 
+  it.each([
+    ['digits only', '12345'],
+    ['a digit inside', 'Riyad2'],
+    ['a symbol', 'Riyad_Hossain'],
+    ['two spaces', 'Riyad  Hossain'],
+  ])('refuses a name with %s', async (_why, name) => {
+    const res = await request(app).post('/api/auth/register').send({ name, email: 'name-check@example.com', password: PASSWORD });
+    expect(res.status).toBe(400);
+    expect(Object.keys(res.body.error.fields)).toEqual(['name']);
+    expect(await prisma.user.count()).toBe(0);
+  });
+
+  it.each(['Md. Rakibul Hasan', "O'Brien-Smith", 'মোঃ রাকিবুল হাসান'])('accepts the name %s', async (name) => {
+    const res = await request(app).post('/api/auth/register').send({ name, email: 'name-ok@example.com', password: PASSWORD });
+    expect(res.status).toBe(201);
+  });
+
+  it.each(['plain', 'a@b', 'a@b.c', 'a..b@example.com', 'a@exa_mple.com', '.a@example.com'])('refuses the email %s', async (email) => {
+    const res = await request(app).post('/api/auth/register').send({ name: 'Riyad', email, password: PASSWORD });
+    expect(res.status).toBe(400);
+    expect(Object.keys(res.body.error.fields)).toEqual(['email']);
+  });
+
+  it.each([
+    ['no uppercase', 'lowercase1!', 'uppercase'],
+    ['no lowercase', 'UPPERCASE1!', 'lowercase'],
+    ['no digit', 'NoDigitsHere!', 'digit'],
+    ['no symbol', 'NoSymbol123', 'symbol'],
+  ])('refuses a new password with %s, on registration and on reset', async (_why, password, word) => {
+    const reg = await request(app).post('/api/auth/register').send({ name: 'Riyad', email: 'weak@example.com', password });
+    expect(reg.status).toBe(400);
+    expect(reg.body.error.fields.password).toContain(word);
+
+    const user = await createUser({ email: 'weak-reset@example.com' });
+    await request(app).post('/api/auth/forgot-password').send({ email: user.email });
+    const reset = await request(app).post('/api/auth/reset-password').send({ token: tokenFromLastResetMail(), password });
+    expect(reset.status).toBe(400);
+    expect(reset.body.error.fields.password).toContain(word);
+  });
+
+  it('still signs in an older account whose password predates the rules', async () => {
+    const user = await prisma.user.create({ data: { name: 'Old Timer', email: 'old@example.com', passwordHash: await bcrypt.hash('oldpassword', 4) } });
+    expect((await request(app).post('/api/auth/login').send({ email: user.email, password: 'oldpassword' })).status).toBe(200);
+  });
+
   it('rejects a duplicate email', async () => {
     await createUser({ email: 'taken@example.com' });
     const res = await request(app)
@@ -200,7 +245,7 @@ describe('AT01.3 Sign in with Google', () => {
 
 describe('AT01.3 Google linking shuts out whoever registered the address first', () => {
   const owner = { sub: 'google-owner', email: 'victim@gmail.com', emailVerified: true, name: 'Real Owner' };
-  const ATTACKER_PASSWORD = 'AttackerPass1';
+  const ATTACKER_PASSWORD = 'AttackerPass1!';
 
   async function registerAsAttacker() {
     const attacker = request.agent(app);
@@ -253,7 +298,7 @@ describe('AT01.3 Google linking shuts out whoever registered the address first',
 
     expect(await prisma.user.findUniqueOrThrow({ where: { id: bystander.id } })).toEqual(bystander);
     expect((await bystanderSession.get('/api/auth/me')).status).toBe(200);
-    expect((await request(app).post('/api/auth/reset-password').send({ token: bystanderToken, password: 'BystanderPass7' })).status).toBe(200);
+    expect((await request(app).post('/api/auth/reset-password').send({ token: bystanderToken, password: 'BystanderPass7!' })).status).toBe(200);
   });
 
   it('cancels an unused reset link from before the linking', async () => {
@@ -279,10 +324,10 @@ describe('AT01.3 Google linking shuts out whoever registered the address first',
     await signInWithGoogle();
 
     expect((await request(app).post('/api/auth/forgot-password').send({ email: owner.email })).status).toBe(200);
-    const reset = await request(app).post('/api/auth/reset-password').send({ token: tokenFromLastResetMail(), password: 'OwnerNewPass7' });
+    const reset = await request(app).post('/api/auth/reset-password').send({ token: tokenFromLastResetMail(), password: 'OwnerNewPass7!' });
     expect(reset.status).toBe(200);
 
-    const login = await request(app).post('/api/auth/login').send({ email: owner.email, password: 'OwnerNewPass7' });
+    const login = await request(app).post('/api/auth/login').send({ email: owner.email, password: 'OwnerNewPass7!' });
     expect(login.status).toBe(200);
     expect(login.body.user).toMatchObject({ hasPassword: true, googleLinked: true });
     expect((await request(app).post('/api/auth/login').send({ email: owner.email, password: ATTACKER_PASSWORD })).status).toBe(401);
@@ -292,8 +337,8 @@ describe('AT01.3 Google linking shuts out whoever registered the address first',
     const { id } = await registerAsAttacker();
     await signInWithGoogle();
     await request(app).post('/api/auth/forgot-password').send({ email: owner.email });
-    await request(app).post('/api/auth/reset-password').send({ token: tokenFromLastResetMail(), password: 'OwnerNewPass7' });
-    const passwordSession = await signedInAgent(owner.email, 'OwnerNewPass7');
+    await request(app).post('/api/auth/reset-password').send({ token: tokenFromLastResetMail(), password: 'OwnerNewPass7!' });
+    const passwordSession = await signedInAgent(owner.email, 'OwnerNewPass7!');
     await request(app).post('/api/auth/forgot-password').send({ email: owner.email });
     const before = await prisma.user.findUniqueOrThrow({ where: { id } });
 
@@ -309,7 +354,7 @@ describe('AT01.3 Google linking shuts out whoever registered the address first',
 });
 
 describe('AT01.3 Sign-ins and resets overtaken by a linking or password change', () => {
-  const ATTACKER_PASSWORD = 'AttackerPass1';
+  const ATTACKER_PASSWORD = 'AttackerPass1!';
   const FAILED_REASON = 'password changed during sign-in';
   // Longer than untilWaitingOnLock's wait, so a test that goes wrong fails on the lock and not on this timeout.
   const LOCK_HOLD_OPTIONS = { maxWait: 10_000, timeout: 28_000 };
@@ -443,7 +488,7 @@ describe('AT01.3 Sign-ins and resets overtaken by a linking or password change',
 
     const login = await whileBcryptRuns(
       'compare',
-      async () => expect((await attemptReset(token, 'BrandNewPass7')).status).toBe(200),
+      async () => expect((await attemptReset(token, 'BrandNewPass7!')).status).toBe(200),
       () => attemptLogin(user.email, PASSWORD),
     );
 
@@ -453,7 +498,7 @@ describe('AT01.3 Sign-ins and resets overtaken by a linking or password change',
     expect((await oldSession.get('/api/auth/me')).status).toBe(401);
     expect(await prisma.auditLog.count({ where: { action: 'LOGIN_FAILED', targetId: user.id, reason: FAILED_REASON } })).toBe(1);
 
-    expect((await attemptLogin(user.email, 'BrandNewPass7')).status).toBe(200);
+    expect((await attemptLogin(user.email, 'BrandNewPass7!')).status).toBe(200);
     expect(await prisma.session.count({ where: { userId: user.id } })).toBe(1);
   });
 
@@ -605,7 +650,7 @@ describe('AT01.3 Sign-ins and resets overtaken by a linking or password change',
       const reset = await single
         .request(single.app)
         .post('/api/auth/reset-password')
-        .send({ token: single.tokenFromLastResetMail(), password: 'BrandNewPass7' });
+        .send({ token: single.tokenFromLastResetMail(), password: 'BrandNewPass7!' });
       expect(reset.status).toBe(200);
 
       single.googleAccounts.set('owner', { sub: `google-${email}`, email, emailVerified: true, name: 'Real Owner' });
@@ -628,7 +673,7 @@ describe('AT01.3 Sign-ins and resets overtaken by a linking or password change',
     const reset = await whileBcryptRuns(
       'hash',
       () => prisma.emailToken.updateMany({ where: { userId: user.id }, data: { expiresAt: new Date(Date.now() - 1000) } }),
-      () => attemptReset(token, 'BrandNewPass7'),
+      () => attemptReset(token, 'BrandNewPass7!'),
     );
 
     expect(reset.status).toBe(400);
@@ -660,7 +705,7 @@ describe('AT01.3 Sign-ins and resets overtaken by a linking or password change',
     const reset = await whileBcryptRuns(
       'hash',
       () => prisma.emailToken.updateMany({ where: { userId: user.id }, data: { usedAt: new Date() } }),
-      () => attemptReset(token, 'BrandNewPass7'),
+      () => attemptReset(token, 'BrandNewPass7!'),
     );
 
     expect(reset.status).toBe(400);
@@ -673,7 +718,7 @@ describe('AT01.3 Sign-ins and resets overtaken by a linking or password change',
   it('lets exactly one of two simultaneous resets use a token', async () => {
     const user = await createUser({ email: 'reset-two-at-once@example.com' });
     const token = await requestResetToken(user.email);
-    const passwords = ['FirstNewPass7', 'SecondNewPass7'];
+    const passwords = ['FirstNewPass7!', 'SecondNewPass7!'];
 
     const results = await Promise.all(passwords.map((password) => attemptReset(token, password)));
 
@@ -692,14 +737,14 @@ describe('AT01.3 Sign-ins and resets overtaken by a linking or password change',
     const logged = vi.spyOn(console, 'error').mockImplementationOnce(() => undefined);
 
     try {
-      expect((await attemptReset(token, 'BrandNewPass7')).status).toBe(500);
+      expect((await attemptReset(token, 'BrandNewPass7!')).status).toBe(500);
     } finally {
       hash.mockRestore();
       logged.mockRestore();
     }
 
     expect(await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).toEqual(user);
-    expect((await attemptReset(token, 'BrandNewPass7')).status).toBe(200);
+    expect((await attemptReset(token, 'BrandNewPass7!')).status).toBe(200);
   });
 
   it.each(['BANNED', 'SUSPENDED'])('uses up the link of a %s account and changes nothing else', async (status) => {
@@ -708,7 +753,7 @@ describe('AT01.3 Sign-ins and resets overtaken by a linking or password change',
     const token = await requestResetToken(user.email);
     const before = await prisma.user.update({ where: { id: user.id }, data: { status } });
 
-    const reset = await attemptReset(token, 'BrandNewPass7');
+    const reset = await attemptReset(token, 'BrandNewPass7!');
 
     expect(reset.status).toBe(403);
     expect(reset.body.error.code).toBe('ACCOUNT_DISABLED');
@@ -718,7 +763,7 @@ describe('AT01.3 Sign-ins and resets overtaken by a linking or password change',
     expect(await prisma.emailToken.count({ where: { userId: user.id, usedAt: { not: null } } })).toBe(1);
     expect(await prisma.auditLog.count({ where: { action: 'PASSWORD_RESET', targetId: user.id } })).toBe(0);
 
-    const again = await attemptReset(token, 'BrandNewPass7');
+    const again = await attemptReset(token, 'BrandNewPass7!');
     expect(again.status).toBe(400);
     expect(again.body.error.code).toBe('INVALID_TOKEN');
   });
@@ -747,13 +792,13 @@ describe('AT01.4 Password reset', () => {
     expect(forgot.status).toBe(200);
     const token = tokenFromLastResetMail();
 
-    const reset = await request(app).post('/api/auth/reset-password').send({ token, password: 'BrandNewPass7' });
+    const reset = await request(app).post('/api/auth/reset-password').send({ token, password: 'BrandNewPass7!' });
     expect(reset.status).toBe(200);
 
     expect((await oldSession.get('/api/auth/me')).status).toBe(401);
     expect((await request(app).post('/api/auth/login').send({ email: user.email, password: PASSWORD })).status).toBe(401);
-    expect((await request(app).post('/api/auth/login').send({ email: user.email, password: 'BrandNewPass7' })).status).toBe(200);
-    expect((await request(app).post('/api/auth/reset-password').send({ token, password: 'Another1Pass' })).status).toBe(400);
+    expect((await request(app).post('/api/auth/login').send({ email: user.email, password: 'BrandNewPass7!' })).status).toBe(200);
+    expect((await request(app).post('/api/auth/reset-password').send({ token, password: 'Another1Pass!' })).status).toBe(400);
   });
 
   it('does not reveal whether an email is registered', async () => {
@@ -773,7 +818,7 @@ describe('AT01.4 Password reset', () => {
     const token = tokenFromLastResetMail();
     await prisma.emailToken.updateMany({ data: { expiresAt: new Date(Date.now() - 1000) } });
 
-    expect((await request(app).post('/api/auth/reset-password').send({ token, password: 'BrandNewPass7' })).status).toBe(400);
+    expect((await request(app).post('/api/auth/reset-password').send({ token, password: 'BrandNewPass7!' })).status).toBe(400);
   });
 });
 

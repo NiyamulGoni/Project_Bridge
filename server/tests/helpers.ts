@@ -18,7 +18,7 @@ setCoverStorage(coverStorage);
 export const googleAccounts = new Map<string, GoogleIdentity>();
 setGoogleVerifier(async (idToken) => googleAccounts.get(idToken.replace(/^google:/, '').replace(/x+$/, '')) ?? null);
 
-export const PASSWORD = 'CorrectHorse9';
+export const PASSWORD = 'CorrectHorse9!';
 
 export async function resetDb() {
   mailer.outbox.length = 0;
@@ -46,6 +46,7 @@ export async function resetDb() {
     prisma.projectMember.deleteMany(),
     prisma.project.deleteMany(),
     prisma.guestSession.deleteMany(),
+    prisma.userProfile.deleteMany(),
     prisma.user.deleteMany(),
   ]);
 }

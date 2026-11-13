@@ -31,6 +31,7 @@ model User {
   sessions         Session[]
   emailTokens      EmailToken[]
   projects         Project[]
+  searchLogs       SearchLog[]
   memberships      ProjectMember[]
   notifications    Notification[]
   reports          Report[]
@@ -42,6 +43,16 @@ model User {
   messages         Message[]
   offers           PaidOffer[]
   roleRequests     RoleRequest[]
+  profile          UserProfile?
+}
+
+/// Optional profile extras, in their own table so the User row (read on every request) is unchanged.
+model UserProfile {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Public URL of the cover photo in the cover bucket, under users/<userId>/.
+  coverUrl  String?
+  updatedAt DateTime @updatedAt
 }
 
 /// Server-side sessions so suspension/ban invalidates access on the next request (NFR-S3).
@@ -343,6 +354,18 @@ model ConversationParticipant {
 
   @@id([conversationId, userId])
   @@index([userId])
+}
+
+/// One row per name search a signed-in user ran; feeds the one-week "popular searches" suggestions.
+model SearchLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Lowercased search text.
+  term      String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt, term])
 }
 
 /// One private message (FR10). Only the two participants can read it.

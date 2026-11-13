@@ -13,7 +13,7 @@ const FIELD_LABELS: Record<keyof ProjectContent, string> = {
 };
 
 function show(value: ProjectContent[keyof ProjectContent]): string {
-  if (Array.isArray(value)) return value.map((t) => `#${t}`).join(' ');
+  if (Array.isArray(value)) return value.join(' ');
   return value ?? '—';
 }
 

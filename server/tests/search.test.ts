@@ -71,8 +71,65 @@ describe('Search', () => {
     expect(pro.body.items[0].overview).toHaveLength(1200);
   });
 
-  it('is for signed-in users only', async () => {
-    expect((await request(app).get('/api/projects/search?q=bus')).status).toBe(401);
+  it('lets a guest search by name and by tags, with Guest card fields only', async () => {
+    await seed();
+    const byName = await request(app).get('/api/projects/search?q=bus');
+    expect(byName.status).toBe(200);
+    expect(titles(byName)).toEqual(['Bus Fare Estimator', 'Smart Bus Tracker']);
+    expect(byName.body.tier).toBe('GUEST');
+    expect(byName.body.items[0].overview).toBeUndefined();
+    expect(byName.body.items[0].owner).toBeUndefined();
+
+    const byTags = await request(app).get('/api/projects/search?tags=transport,iot');
+    expect(titles(byTags)).toEqual(['Smart Bus Tracker']);
+
+    const both = await request(app).get('/api/projects/search?q=fare&tags=data');
+    expect(titles(both)).toEqual(['Bus Fare Estimator']);
+    expect(both.body.total).toBe(1);
+  });
+
+  it('shows a guest no hidden or draft projects, and a guest search is not logged', async () => {
+    await seed();
+    const res = await request(app).get('/api/projects/search?q=hidden');
+    expect(res.body.items).toEqual([]);
+    const { prisma } = await import('../src/lib/prisma.js');
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await prisma.searchLog.count()).toBe(0);
+  });
+
+  it('charges a guest search to the same 20-project budget as the feed', async () => {
+    const owner = await createUser();
+    for (let i = 1; i <= 30; i++) await createProject(owner.id, { title: `Gadget ${i}`, tags: ['gadget'] });
+    const guest = request.agent(app);
+
+    const p1 = await guest.get('/api/projects/search?q=gadget&page=1');
+    const p2 = await guest.get('/api/projects/search?q=gadget&page=2');
+    expect(p1.body.items).toHaveLength(10);
+    expect(p2.body.items).toHaveLength(10);
+    expect(p2.body.hasMore).toBe(false);
+    expect(p2.body.total).toBe(30);
+    expect(p2.body.guest).toMatchObject({ limit: 20, cardsServed: 20, capReached: true });
+
+    const p3 = await guest.get('/api/projects/search?q=gadget&page=3');
+    expect(p3.status).toBe(403);
+    expect(p3.body.error.code).toBe('GUEST_LIMIT');
+
+    // The budget is shared: the feed cannot show this guest any project beyond the 20 already seen.
+    const feed = await guest.get('/api/projects/feed?page=1');
+    expect(feed.body.items.length).toBeLessThanOrEqual(10);
+    const seen = new Set([...p1.body.items, ...p2.body.items].map((i: { id: string }) => i.id));
+    for (const card of feed.body.items) expect(seen.has(card.id)).toBe(true);
+  });
+
+  it('lets a guest list the tags in use', async () => {
+    await seed();
+    const res = await request(app).get('/api/projects/tags');
+    expect(res.status).toBe(200);
+    expect(res.body.items).toContainEqual({ tag: 'transport', count: 2 });
+  });
+
+  it('keeps live suggestions for signed-in users only', async () => {
+    expect((await request(app).get('/api/projects/suggest?q=bus')).status).toBe(401);
   });
 
   it('lists tags in use for the tag chips', async () => {

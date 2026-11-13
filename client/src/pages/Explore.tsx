@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 import { api, ApiError, type FeedPage, type ProjectCard as Card, type SearchPage } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import { Alert } from '../components/Alert';
@@ -7,6 +7,13 @@ import { CardSkeleton } from '../components/CardSkeleton';
 import { GuestCapPrompt } from '../components/GuestCapPrompt';
 import { ProjectCard } from '../components/ProjectCard';
 import { FilterSidebar } from '../components/FilterSidebar';
+
+type SortOption = 'default' | 'recent' | 'interaction';
+const SORTS: Array<{ value: SortOption; label: string }> = [
+  { value: 'recent', label: 'Most Recent' },
+  { value: 'interaction', label: 'Most interaction' },
+  { value: 'default', label: 'Default' },
+];
 
 const TIER_NOTES: Record<FeedPage['tier'], string> = {
   GUEST: 'Guest preview · up to 20 projects',
@@ -20,8 +27,10 @@ export function Explore() {
   const q = params.get('q') ?? '';
   const tagParam = params.get('tags') ?? '';
   const tags = useMemo(() => tagParam.split(',').filter(Boolean), [tagParam]);
-  // FR06: search is for signed-in users; guests always get the feed.
-  const searching = Boolean(user) && (q !== '' || tags.length > 0);
+  // FR06: everyone can search by project name and tags; a guest's results share their 20-project budget.
+  const searching = q !== '' || tags.length > 0;
+  const sortParam = params.get('sort');
+  const sort: SortOption = SORTS.some((s) => s.value === sortParam) ? (sortParam as SortOption) : 'default';
 
   const [items, setItems] = useState<Card[]>([]);
   const [page, setPage] = useState(0);
@@ -41,7 +50,7 @@ export function Explore() {
       try {
         const path = searching
           ? `/projects/search?${new URLSearchParams({ q, tags: tags.join(','), page: String(next) })}`
-          : `/projects/feed?page=${next}`;
+          : `/projects/feed?page=${next}&sort=${user ? sort : 'default'}`;
         const res = await api<FeedPage | SearchPage>(path);
         setItems((prev) => (replace ? res.items : [...prev, ...res.items]));
         setPage(next);
@@ -58,7 +67,7 @@ export function Explore() {
         setLoading(false);
       }
     },
-    [searching, q, tags],
+    [searching, q, tags, sort, user],
   );
 
   // Reload from the first page whenever the viewer or the search changes.
@@ -73,8 +82,15 @@ export function Explore() {
     setParams(next);
   }
 
+  function changeSort(next: SortOption) {
+    const nextParams = new URLSearchParams(params);
+    if (next === 'default') nextParams.delete('sort');
+    else nextParams.set('sort', next);
+    setParams(nextParams);
+  }
+
   const firstLoad = loading && items.length === 0;
-  const filterText = [q && `“${q}”`, tags.length > 0 && `tags ${tags.map((t) => `#${t}`).join(' + ')}`].filter(Boolean).join(' with ');
+  const filterText = [q && `“${q}”`, tags.length > 0 && `tags ${tags.join(' + ')}`].filter(Boolean).join(' with ');
 
   return (
     <main className="page">
@@ -86,23 +102,10 @@ export function Explore() {
 
       <div className="explore-layout">
         <aside className="explore-side">
-          {user ? (
-            <details className="filters-toggle" open={filtersOpen} onToggle={(e) => setFiltersOpen(e.currentTarget.open)}>
-              <summary className="btn btn-secondary">Filters{tags.length + (q ? 1 : 0) > 0 ? ` (${tags.length + (q ? 1 : 0)})` : ''}</summary>
-              <FilterSidebar q={q} tags={tags} onSearch={search} />
-            </details>
-          ) : (
-            !authLoading && (
-              <div className="filters card">
-                <div className="filters-head">
-                  <h2>Filters</h2>
-                </div>
-                <p className="muted small filters-group">
-                  <Link to="/login">Sign in</Link> to search projects by name and filter them by tags.
-                </p>
-              </div>
-            )
-          )}
+          <details className="filters-toggle" open={filtersOpen} onToggle={(e) => setFiltersOpen(e.currentTarget.open)}>
+            <summary className="btn btn-secondary">Filters{tags.length + (q ? 1 : 0) > 0 ? ` (${tags.length + (q ? 1 : 0)})` : ''}</summary>
+            <FilterSidebar q={q} tags={tags} onSearch={search} suggestions={Boolean(user)} />
+          </details>
         </aside>
         <div className="explore-main">
 
@@ -114,6 +117,21 @@ export function Explore() {
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => search('', [])}>
             Clear filters
           </button>
+        </div>
+      )}
+
+      {user && !searching && (
+        <div className="row sort-bar" style={{ justifyContent: 'flex-end' }}>
+          <label htmlFor="feed-sort" className="muted">
+            Sort by
+          </label>
+          <select id="feed-sort" className="input" style={{ width: 'auto' }} value={sort} onChange={(e) => changeSort(e.target.value as SortOption)}>
+            {SORTS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 

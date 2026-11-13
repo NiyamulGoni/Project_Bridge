@@ -13,7 +13,7 @@ import { shareRouter } from '../src/modules/sharing/routes.js';
 
 type Row = { title: string; prefix: string; router: any; check: (path: string, method: string) => string; tests: (path: string) => string };
 const SECTIONS: Row[] = [
-  { title: 'Accounts', prefix: '/api/auth', router: accountsRouter, check: (p) => (p === '/me' ? 'Own account only' : p === '/config' || p === '/logout' ? 'None: public' : 'None: public, rate limited'), tests: () => 'accounts, hardening' },
+  { title: 'Accounts', prefix: '/api/auth', router: accountsRouter, check: (p) => (p.startsWith('/me') ? 'Own account only' : p === '/config' || p === '/logout' ? 'None: public' : 'None: public, rate limited'), tests: (p) => (p.startsWith('/me/') ? 'profile, security, views' : 'accounts, hardening') },
   { title: 'Projects (owner and team)', prefix: '/api/projects', router: projectsRouter, check: (p) => (p === '/' || p === '/mine' || p === '/invites' ? 'Own records only' : p.startsWith('/invites/') ? 'The invited user only' : 'Owner or accepted editor, else 404'), tests: () => 'permissions, publish, maintain, hideDelete, security' },
   { title: 'Discovery (public views)', prefix: '/api/projects', router: discoveryRouter, check: (p) => (p === '/:id/share' ? 'Published only; Guest card fields' : 'Published only; fields by role (FIELDS_BY_TIER); Guest 20-project budget'), tests: (p) => (p === '/:id/share' ? 'sharing, views' : 'views, feed, search, projectView') },
   { title: 'Likes and comments', prefix: '/api/projects', router: engagementRouter, check: (p) => (p.includes(':commentId') ? 'Comment author only (403), published project' : 'Published project, else 404'), tests: () => 'engagement, security' },
